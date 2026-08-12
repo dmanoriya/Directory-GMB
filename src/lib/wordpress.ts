@@ -466,6 +466,7 @@ export async function getBlogPosts(): Promise<BlogPost[]> {
           if (filtered.length > 0) {
             return filtered.map((item: any) => mapWpPostToFormat(item));
           }
+        }
       }
     } catch (e) {
       console.warn('[WordPress] Blog posts fetch failed:', e);

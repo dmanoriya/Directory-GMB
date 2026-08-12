@@ -933,8 +933,8 @@ export default function HomePage() {
                     </h3>
                     
                     <div style={{
-                      background: theme.pillBg,
-                      color: theme.pillColor,
+                      background: theme.badgeBg,
+                      color: theme.badgeColor,
                       fontFamily: 'var(--font-heading)',
                       fontSize: '0.725rem',
                       fontWeight: '700',
