@@ -77,12 +77,29 @@ export default function GoogleMapView({ businesses, apiKey = DEFAULT_MAPS_KEY }:
 
     const bounds = new window.google.maps.LatLngBounds();
     const infoWindow = new window.google.maps.InfoWindow();
+    let validMarkerCount = 0;
 
     businesses.forEach((biz) => {
       if (!biz.latitude || !biz.longitude) return;
 
-      const position = { lat: biz.latitude, lng: biz.longitude };
+      let lat = Number(biz.latitude);
+      let lng = Number(biz.longitude);
+
+      if (isNaN(lat) || isNaN(lng) || lat === 0 || lng === 0) return;
+
+      // Auto-correct positive US longitude e.g. 117.1611 -> -117.1611
+      if (lng > 0 && lng > 60 && lng < 130) {
+        lng = -lng;
+      }
+
+      // Filter out ocean / invalid coordinates (Outside US land mass: 24 to 50 N, -125 to -65 W)
+      if (lat < 24 || lat > 50 || lng < -125 || lng > -65) {
+        return;
+      }
+
+      const position = { lat, lng };
       bounds.extend(position);
+      validMarkerCount++;
 
       const marker = new window.google.maps.Marker({
         position,
@@ -117,7 +134,7 @@ export default function GoogleMapView({ businesses, apiKey = DEFAULT_MAPS_KEY }:
       });
     });
 
-    if (businesses.length > 0) {
+    if (validMarkerCount > 0) {
       map.fitBounds(bounds);
     }
   };

@@ -750,8 +750,15 @@ function mapWpBusinessToFormat(item: Record<string, unknown>): BusinessListing {
     workingHours:  parseWorkingHours(meta.workingHours),
     serviceOptions,
     thumbnail:     String(meta.thumbnail || ''),
-    latitude:      parseFloat(String(meta.latitude || '0')),
-    longitude:     parseFloat(String(meta.longitude || '0')),
+    latitude:      (() => {
+                     const lat = parseFloat(String(meta.latitude || '0'));
+                     return (!isNaN(lat) && lat >= 24 && lat <= 50) ? lat : 32.7157;
+                   })(),
+    longitude:     (() => {
+                     let lng = parseFloat(String(meta.longitude || '0'));
+                     if (lng > 0 && lng > 60 && lng < 130) lng = -lng;
+                     return (!isNaN(lng) && lng <= -65 && lng >= -125) ? lng : -117.1611;
+                   })(),
     keyword:       String(meta.keyword || ''),
     googleMapsRank: parseInt(String(meta.googleMapsRank || '0'), 10),
     verified:      meta.verified === 'true' || meta.verified === true,
