@@ -3,6 +3,7 @@ export interface BusinessListing {
   placeId: string; // UNIQUE KEY (e.g. ChIJ0fkVj7wB3IARJm1vn7X8pR0)
   dataId: string;
   slug: string;
+  rawSlug?: string;
   title: string;
   type: string;
   typeSlug: string;

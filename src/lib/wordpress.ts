@@ -229,25 +229,40 @@ function filterListingsDataset(listings: BusinessListing[], filters?: {
 export const getBusinessBySlug = cache(async (slugOrPlaceId: string): Promise<BusinessListing | null> => {
   const target = slugOrPlaceId.toLowerCase().trim();
 
+  const matchListing = (b: BusinessListing) => {
+    const s = b.slug.toLowerCase();
+    const raw = (b.rawSlug || '').toLowerCase();
+    const pid = b.placeId.toLowerCase();
+    const seo = createSeoSlug(b.title, b.city, b.placeId).toLowerCase();
+    const titleSlug = b.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+
+    return (
+      s === target ||
+      raw === target ||
+      pid === target ||
+      seo === target ||
+      titleSlug === target ||
+      (s.length > 5 && target.length > 5 && (s.startsWith(target) || target.startsWith(s))) ||
+      (raw.length > 5 && target.length > 5 && (raw.startsWith(target) || target.startsWith(raw)))
+    );
+  };
+
   // Fast check 1: In-memory cache hit for instant 0ms response!
   if (listingsCache && listingsCache.data.length > 0) {
-    const cachedMatch =
-      listingsCache.data.find((b) => b.slug.toLowerCase() === target) ||
-      listingsCache.data.find((b) => b.placeId.toLowerCase() === target) ||
-      listingsCache.data.find((b) => createSeoSlug(b.title, b.city, b.placeId).toLowerCase() === target);
+    const cachedMatch = listingsCache.data.find(matchListing);
     if (cachedMatch) return cachedMatch;
   }
 
   const apiUrl = getWpApiUrl();
 
-  // Try direct single-item lookup by slug via WP REST API for 10ms response time
+  // Fast check 2: Direct single-item lookup by slug via WP REST API
   if (apiUrl) {
     try {
       const res = await fetch(
         `${apiUrl}/wp-json/wp/v2/business_listing?slug=${encodeURIComponent(slugOrPlaceId)}&_fields=id,slug,title,meta`,
         {
           headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) LocableNextJS/1.0' },
-          signal: AbortSignal.timeout(2000),
+          signal: AbortSignal.timeout(5000),
         }
       );
       if (res.ok) {
@@ -257,17 +272,32 @@ export const getBusinessBySlug = cache(async (slugOrPlaceId: string): Promise<Bu
         }
       }
     } catch (e) {
-      console.warn('[WordPress] Direct slug lookup failed, checking cache:', e);
+      console.warn('[WordPress] Direct slug lookup warning:', e);
     }
+
+    // Try search query by slug keywords if direct slug fetch returns empty
+    try {
+      const resSearch = await fetch(
+        `${apiUrl}/wp-json/wp/v2/business_listing?search=${encodeURIComponent(slugOrPlaceId.replace(/-/g, ' '))}&per_page=10&_fields=id,slug,title,meta`,
+        {
+          headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) LocableNextJS/1.0' },
+          signal: AbortSignal.timeout(5000),
+        }
+      );
+      if (resSearch.ok) {
+        const items = await resSearch.json();
+        if (Array.isArray(items) && items.length > 0) {
+          const mapped = items.map(mapWpBusinessToFormat);
+          const found = mapped.find(matchListing);
+          if (found) return found;
+        }
+      }
+    } catch (e) {}
   }
 
+  // Fast check 3: Full dataset search
   const all = await getBusinesses();
-  return (
-    all.find((b) => b.slug.toLowerCase() === target) ||
-    all.find((b) => b.placeId.toLowerCase() === target) ||
-    all.find((b) => createSeoSlug(b.title, b.city, b.placeId).toLowerCase() === target) ||
-    null
-  );
+  return all.find(matchListing) || null;
 });
 
 /**
@@ -752,6 +782,7 @@ function mapWpBusinessToFormat(item: Record<string, unknown>): BusinessListing {
     placeId:       String(meta.placeId || item.id || ''),
     dataId:        String(meta.dataId || ''),
     slug,
+    rawSlug,
     title,
     type,
     typeSlug,
