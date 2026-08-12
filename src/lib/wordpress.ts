@@ -6,7 +6,27 @@ import { BusinessListing, BusinessReview, Category, LocationCity, BlogPost, Lead
  * Get WordPress REST API base URL.
  */
 export function getWpApiUrl(): string {
-  return (process.env.NEXT_PUBLIC_WORDPRESS_API_URL || '').replace(/\/$/, '');
+  let envUrl = (
+    process.env.NEXT_PUBLIC_WORDPRESS_API_URL ||
+    process.env.WORDPRESS_API_URL ||
+    ''
+  ).trim().replace(/\/$/, '');
+
+  if (typeof window !== 'undefined') {
+    const localSaved = localStorage.getItem('directory_wp_api_url');
+    if (localSaved && localSaved.trim()) {
+      return localSaved.trim().replace(/\/$/, '');
+    }
+
+    const host = window.location.hostname;
+    const isLocal = host === 'localhost' || host === '127.0.0.1' || host.endsWith('.local');
+
+    if (!isLocal && (!envUrl || envUrl.includes('localhost') || envUrl.includes('.local') || envUrl.includes('127.0.0.1'))) {
+      return window.location.origin.replace(/\/$/, '');
+    }
+  }
+
+  return envUrl;
 }
 
 /**

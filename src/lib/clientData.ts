@@ -1,4 +1,5 @@
 import { BusinessListing, Category, LocationCity, BlogPost } from '@/types/directory';
+import { getBusinesses, getCategories, getCities, getBlogPosts } from '@/lib/wordpress';
 
 interface CacheItem<T> {
   data: T;
@@ -19,92 +20,141 @@ const CLIENT_CACHE_TTL = 300000; // 5 minutes
 
 export async function fetchCachedBusinesses(): Promise<BusinessListing[]> {
   const now = Date.now();
-  if (businessCache && now - businessCache.timestamp < CLIENT_CACHE_TTL) {
+  if (businessCache && businessCache.data.length > 0 && now - businessCache.timestamp < CLIENT_CACHE_TTL) {
     return businessCache.data;
   }
   if (pendingBusinessPromise) return pendingBusinessPromise;
 
-  pendingBusinessPromise = fetch('/api/businesses')
-    .then((r) => (r.ok ? r.json() : []))
-    .then((data) => {
-      const arr = Array.isArray(data) ? data : [];
-      businessCache = { data: arr, timestamp: Date.now() };
-      pendingBusinessPromise = null;
-      return arr;
-    })
-    .catch(() => {
-      pendingBusinessPromise = null;
-      return businessCache ? businessCache.data : [];
-    });
+  pendingBusinessPromise = (async () => {
+    try {
+      const r = await fetch('/api/businesses');
+      if (r.ok) {
+        const data = await r.json();
+        if (Array.isArray(data) && data.length > 0) {
+          businessCache = { data, timestamp: Date.now() };
+          return data;
+        }
+      }
+    } catch (e) {}
+
+    // Fallback: Direct fetch from WordPress REST API if API route returns empty
+    try {
+      const direct = await getBusinesses();
+      if (Array.isArray(direct) && direct.length > 0) {
+        businessCache = { data: direct, timestamp: Date.now() };
+        return direct;
+      }
+    } catch (e) {}
+
+    return businessCache ? businessCache.data : [];
+  })().finally(() => {
+    pendingBusinessPromise = null;
+  });
 
   return pendingBusinessPromise;
 }
 
 export async function fetchCachedCategories(): Promise<Category[]> {
   const now = Date.now();
-  if (categoryCache && now - categoryCache.timestamp < CLIENT_CACHE_TTL) {
+  if (categoryCache && categoryCache.data.length > 0 && now - categoryCache.timestamp < CLIENT_CACHE_TTL) {
     return categoryCache.data;
   }
   if (pendingCategoryPromise) return pendingCategoryPromise;
 
-  pendingCategoryPromise = fetch('/api/categories')
-    .then((r) => (r.ok ? r.json() : []))
-    .then((data) => {
-      const arr = Array.isArray(data) ? data : [];
-      categoryCache = { data: arr, timestamp: Date.now() };
-      pendingCategoryPromise = null;
-      return arr;
-    })
-    .catch(() => {
-      pendingCategoryPromise = null;
-      return categoryCache ? categoryCache.data : [];
-    });
+  pendingCategoryPromise = (async () => {
+    try {
+      const r = await fetch('/api/categories');
+      if (r.ok) {
+        const data = await r.json();
+        if (Array.isArray(data) && data.length > 0) {
+          categoryCache = { data, timestamp: Date.now() };
+          return data;
+        }
+      }
+    } catch (e) {}
+
+    try {
+      const direct = await getCategories();
+      if (Array.isArray(direct) && direct.length > 0) {
+        categoryCache = { data: direct, timestamp: Date.now() };
+        return direct;
+      }
+    } catch (e) {}
+
+    return categoryCache ? categoryCache.data : [];
+  })().finally(() => {
+    pendingCategoryPromise = null;
+  });
 
   return pendingCategoryPromise;
 }
 
 export async function fetchCachedCities(): Promise<LocationCity[]> {
   const now = Date.now();
-  if (cityCache && now - cityCache.timestamp < CLIENT_CACHE_TTL) {
+  if (cityCache && cityCache.data.length > 0 && now - cityCache.timestamp < CLIENT_CACHE_TTL) {
     return cityCache.data;
   }
   if (pendingCityPromise) return pendingCityPromise;
 
-  pendingCityPromise = fetch('/api/cities')
-    .then((r) => (r.ok ? r.json() : []))
-    .then((data) => {
-      const arr = Array.isArray(data) ? data : [];
-      cityCache = { data: arr, timestamp: Date.now() };
-      pendingCityPromise = null;
-      return arr;
-    })
-    .catch(() => {
-      pendingCityPromise = null;
-      return cityCache ? cityCache.data : [];
-    });
+  pendingCityPromise = (async () => {
+    try {
+      const r = await fetch('/api/cities');
+      if (r.ok) {
+        const data = await r.json();
+        if (Array.isArray(data) && data.length > 0) {
+          cityCache = { data, timestamp: Date.now() };
+          return data;
+        }
+      }
+    } catch (e) {}
+
+    try {
+      const direct = await getCities();
+      if (Array.isArray(direct) && direct.length > 0) {
+        cityCache = { data: direct, timestamp: Date.now() };
+        return direct;
+      }
+    } catch (e) {}
+
+    return cityCache ? cityCache.data : [];
+  })().finally(() => {
+    pendingCityPromise = null;
+  });
 
   return pendingCityPromise;
 }
 
 export async function fetchCachedPosts(): Promise<BlogPost[]> {
   const now = Date.now();
-  if (postCache && now - postCache.timestamp < CLIENT_CACHE_TTL) {
+  if (postCache && postCache.data.length > 0 && now - postCache.timestamp < CLIENT_CACHE_TTL) {
     return postCache.data;
   }
   if (pendingPostPromise) return pendingPostPromise;
 
-  pendingPostPromise = fetch('/api/posts')
-    .then((r) => (r.ok ? r.json() : []))
-    .then((data) => {
-      const arr = Array.isArray(data) ? data : [];
-      postCache = { data: arr, timestamp: Date.now() };
-      pendingPostPromise = null;
-      return arr;
-    })
-    .catch(() => {
-      pendingPostPromise = null;
-      return postCache ? postCache.data : [];
-    });
+  pendingPostPromise = (async () => {
+    try {
+      const r = await fetch('/api/posts');
+      if (r.ok) {
+        const data = await r.json();
+        if (Array.isArray(data) && data.length > 0) {
+          postCache = { data, timestamp: Date.now() };
+          return data;
+        }
+      }
+    } catch (e) {}
+
+    try {
+      const direct = await getBlogPosts();
+      if (Array.isArray(direct) && direct.length > 0) {
+        postCache = { data: direct, timestamp: Date.now() };
+        return direct;
+      }
+    } catch (e) {}
+
+    return postCache ? postCache.data : [];
+  })().finally(() => {
+    pendingPostPromise = null;
+  });
 
   return pendingPostPromise;
 }
