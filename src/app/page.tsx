@@ -245,10 +245,10 @@ export default function HomePage() {
   const [catSearchFilter, setCatSearchFilter] = useState('');
 
   const [auditModalOpen, setAuditModalOpen] = useState(false);
-  const [allBusinesses, setAllBusinesses] = useState<BusinessListing[]>(MOCK_BUSINESSES);
-  const [dynamicCategories, setDynamicCategories] = useState<Category[]>(MOCK_CATEGORIES);
-  const [dynamicCities, setDynamicCities] = useState<LocationCity[]>(MOCK_CITIES);
-  const [dynamicPosts, setDynamicPosts] = useState<BlogPost[]>(MOCK_BLOG_POSTS);
+  const [allBusinesses, setAllBusinesses] = useState<BusinessListing[]>([]);
+  const [dynamicCategories, setDynamicCategories] = useState<Category[]>([]);
+  const [dynamicCities, setDynamicCities] = useState<LocationCity[]>([]);
+  const [dynamicPosts, setDynamicPosts] = useState<BlogPost[]>([]);
 
   const keywordRef = useRef<HTMLDivElement>(null);
   const catDropdownRef = useRef<HTMLDivElement>(null);
@@ -262,10 +262,10 @@ export default function HomePage() {
       fetchCachedPosts()
     ]).then(([biz, cats, cits, posts]) => {
       if (!active) return;
-      if (Array.isArray(biz) && biz.length > 0) setAllBusinesses(biz);
-      if (Array.isArray(cats) && cats.length > 0) setDynamicCategories(cats);
-      if (Array.isArray(cits) && cits.length > 0) setDynamicCities(cits);
-      if (Array.isArray(posts) && posts.length > 0) setDynamicPosts(posts);
+      if (Array.isArray(biz)) setAllBusinesses(biz);
+      if (Array.isArray(cats)) setDynamicCategories(cats);
+      if (Array.isArray(cits)) setDynamicCities(cits);
+      if (Array.isArray(posts)) setDynamicPosts(posts);
     }).catch(() => {});
 
     return () => { active = false; };
@@ -880,67 +880,79 @@ export default function HomePage() {
             </p>
           </div>
 
-          <div className="homepage-category-grid">
-            {dynamicCategories.slice(0, 8).map((cat) => {
-              const theme = getCategoryIconAndColor(cat.name, cat.icon);
-              return (
-                <Link
-                  key={cat.id}
-                  href={`/explore?category=${cat.slug}`}
-                  style={{
-                    background: '#ffffff',
-                    padding: '1.65rem 1.25rem',
-                    borderRadius: '20px',
-                    border: '1px solid #EBE4D8',
-                    boxShadow: '0 10px 30px rgba(17, 17, 17, 0.05)',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    textAlign: 'center',
-                    textDecoration: 'none',
-                    transition: 'all 220ms cubic-bezier(0.16, 1, 0.3, 1)',
-                    position: 'relative'
-                  }}
-                  className="category-card-item"
-                >
-                  <div style={{
-                    width: '58px',
-                    height: '58px',
-                    borderRadius: '16px',
-                    background: theme.bg,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    marginBottom: '1.1rem',
-                    transition: 'transform 200ms ease'
-                  }} className="category-icon-box">
-                    {theme.icon}
-                  </div>
+          {dynamicCategories.length === 0 ? (
+            <div style={{ padding: '3.5rem 2rem', textAlign: 'center', background: '#ffffff', borderRadius: '20px', border: '1px dashed #EBE4D8', maxWidth: '560px', margin: '0 auto' }}>
+              <Building2 size={36} color="#999999" style={{ marginBottom: '0.75rem' }} />
+              <h3 style={{ fontFamily: 'var(--font-heading)', fontSize: '1.2rem', fontWeight: '700', color: '#111111', marginBottom: '0.5rem' }}>
+                No Categories Found in WordPress
+              </h3>
+              <p style={{ color: '#666666', fontSize: '0.9rem', marginBottom: '1.5rem', lineHeight: '1.5' }}>
+                Your directory currently has no categories. Upload listings or create terms in WP-Admin to populate categories here.
+              </p>
+            </div>
+          ) : (
+            <div className="homepage-category-grid">
+              {dynamicCategories.slice(0, 8).map((cat) => {
+                const theme = getCategoryIconAndColor(cat.name, cat.icon);
+                return (
+                  <Link
+                    key={cat.id}
+                    href={`/explore?category=${cat.slug}`}
+                    style={{
+                      background: '#ffffff',
+                      padding: '1.65rem 1.25rem',
+                      borderRadius: '20px',
+                      border: '1px solid #EBE4D8',
+                      boxShadow: '0 10px 30px rgba(17, 17, 17, 0.05)',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      textAlign: 'center',
+                      textDecoration: 'none',
+                      transition: 'all 220ms cubic-bezier(0.16, 1, 0.3, 1)',
+                      position: 'relative'
+                    }}
+                    className="category-card-item"
+                  >
+                    <div style={{
+                      width: '58px',
+                      height: '58px',
+                      borderRadius: '16px',
+                      background: theme.bg,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      marginBottom: '1.1rem',
+                      transition: 'transform 200ms ease'
+                    }} className="category-icon-box">
+                      {theme.icon}
+                    </div>
 
-                  <h3 style={{ fontFamily: 'var(--font-heading)', fontSize: '1.1rem', fontWeight: '700', color: '#111111', marginBottom: '0.4rem', lineHeight: '1.3' }}>
-                    {cat.name}
-                  </h3>
-                  
-                  <span style={{
-                    fontSize: '0.725rem',
-                    fontWeight: '600',
-                    color: theme.badgeColor,
-                    background: theme.badgeBg,
-                    border: `1px solid ${theme.bg}`,
-                    padding: '0.15rem 0.55rem',
-                    borderRadius: '999px',
-                    marginBottom: '0.65rem'
-                  }}>
-                    {cat.count} Verified Pros
-                  </span>
+                    <h3 style={{ fontFamily: 'var(--font-heading)', fontSize: '1.1rem', fontWeight: '700', color: '#111111', marginBottom: '0.4rem', lineHeight: '1.3' }}>
+                      {cat.name}
+                    </h3>
+                    
+                    <div style={{
+                      background: theme.pillBg,
+                      color: theme.pillColor,
+                      fontFamily: 'var(--font-heading)',
+                      fontSize: '0.725rem',
+                      fontWeight: '700',
+                      padding: '0.2rem 0.65rem',
+                      borderRadius: '999px',
+                      marginBottom: '0.85rem'
+                    }}>
+                      {cat.count} Verified Pros
+                    </div>
 
-                  <p style={{ fontSize: '0.825rem', color: '#666666', lineHeight: '1.5', margin: 0 }}>
-                    {cat.description || `${cat.name} services, licensed contractors & verified local specialists.`}
-                  </p>
-                </Link>
-              );
-            })}
-          </div>
+                    <p style={{ fontFamily: 'var(--font-primary)', fontSize: '0.825rem', color: '#666666', lineHeight: '1.5', margin: 0 }}>
+                      {cat.description || `${cat.name} local specialists`}
+                    </p>
+                  </Link>
+                );
+              })}
+            </div>
+          )}
 
           <div style={{ textAlign: 'center', marginTop: '3rem' }}>
             <Link

@@ -41,16 +41,6 @@ export default function SearchableCategorySelect({
       }
     }
 
-    // Add MOCK_CATEGORIES baseline
-    for (const c of MOCK_CATEGORIES) {
-      if (c.name) set.add(c.name.trim());
-      if (Array.isArray(c.subcategories)) {
-        for (const sub of c.subcategories) {
-          if (sub) set.add(sub.trim());
-        }
-      }
-    }
-
     // Add popular default service categories
     const defaults = [
       'Medical Spa & Wellness',

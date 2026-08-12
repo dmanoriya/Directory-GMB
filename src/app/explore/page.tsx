@@ -17,7 +17,7 @@ import { fetchCachedBusinesses } from '@/lib/clientData';
 function ExploreContent() {
   const searchParams = useSearchParams();
 
-  const [allBusinesses, setAllBusinesses] = useState<BusinessListing[]>(MOCK_BUSINESSES);
+  const [allBusinesses, setAllBusinesses] = useState<BusinessListing[]>([]);
   const [loading, setLoading] = useState(false);
   const [filterDrawerOpen, setFilterDrawerOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
@@ -57,7 +57,7 @@ function ExploreContent() {
     let active = true;
     fetchCachedBusinesses()
       .then((data: BusinessListing[]) => {
-        if (active && Array.isArray(data) && data.length > 0) {
+        if (active && Array.isArray(data)) {
           setAllBusinesses(data);
         }
       })

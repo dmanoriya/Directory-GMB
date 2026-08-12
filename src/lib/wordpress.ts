@@ -281,11 +281,6 @@ export async function getCategories(): Promise<Category[]> {
 
   const categoryMap = new Map<string, Category>();
 
-  // 1. First populate with all MOCK_CATEGORIES as baseline
-  for (const cat of MOCK_CATEGORIES) {
-    categoryMap.set(cat.name.toLowerCase().trim(), { ...cat });
-  }
-
   // 2. Fetch WordPress CPT business_type taxonomy terms
   const apiUrl = getWpApiUrl();
   if (apiUrl) {
@@ -417,10 +412,7 @@ export async function getCities(): Promise<LocationCity[]> {
         };
       });
   } else {
-    result = MOCK_CITIES.map((city) => ({
-      ...city,
-      count: 0,
-    }));
+    result = [];
   }
 
   citiesCache = { data: result, timestamp: now };
@@ -474,13 +466,12 @@ export async function getBlogPosts(): Promise<BlogPost[]> {
           if (filtered.length > 0) {
             return filtered.map((item: any) => mapWpPostToFormat(item));
           }
-        }
       }
     } catch (e) {
-      console.warn('[WordPress] Blog posts fetch failed, falling back to mock:', e);
+      console.warn('[WordPress] Blog posts fetch failed:', e);
     }
   }
-  return MOCK_BLOG_POSTS;
+  return [];
 }
 
 export async function getBlogPostBySlug(slug: string): Promise<BlogPost | null> {
@@ -506,7 +497,7 @@ export async function getBlogPostBySlug(slug: string): Promise<BlogPost | null> 
     }
   }
 
-  return MOCK_BLOG_POSTS.find(p => p.slug.toLowerCase() === slug.toLowerCase()) || null;
+  return null;
 }
 
 const FALLBACK_BLOG_IMAGE = '/images/hero_contractor_pro.jpg';
