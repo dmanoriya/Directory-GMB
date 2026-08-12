@@ -60,6 +60,10 @@ export default function Footer() {
     return () => { active = false; };
   }, []);
 
+  const popularCategories = React.useMemo(() => {
+    return [...categories].sort((a, b) => (b.count || 0) - (a.count || 0) || a.name.localeCompare(b.name));
+  }, [categories]);
+
   const handleSubscribe = (e: React.FormEvent) => {
     e.preventDefault();
     if (emailInput.trim()) {
@@ -257,7 +261,7 @@ export default function Footer() {
                 Top Services
               </h4>
               <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                {categories.slice(0, 6).map((cat) => (
+                {popularCategories.slice(0, 6).map((cat) => (
                   <li key={cat.id}>
                     <Link href={`/explore?category=${cat.slug}`} className="footer-nav-link">
                       {cat.name}

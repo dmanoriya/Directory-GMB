@@ -317,32 +317,45 @@ export async function getCategories(): Promise<Category[]> {
     }
   }
 
-  // 3. Merge derived categories from actual business listings
+  // 3. Merge derived categories from actual business listings (primary + secondary otherTypes)
   try {
     const listings = await getBusinesses();
     for (const b of listings) {
-      if (!b.type) continue;
-      const key = b.type.toLowerCase().trim();
-      const slug = b.typeSlug || key.replace(/[\s&]+/g, '-').replace(/[^a-z0-9-]/g, '');
-      if (categoryMap.has(key)) {
-        categoryMap.get(key)!.count = (categoryMap.get(key)!.count || 0) + 1;
-      } else {
-        categoryMap.set(key, {
-          id: `derived-${slug}`,
-          name: b.type,
-          slug,
-          icon: 'Store',
-          description: `${b.type} businesses`,
-          count: 1,
-          subcategories: [],
-        });
+      const allCatNames: string[] = [];
+      if (b.type) allCatNames.push(b.type);
+      if (Array.isArray(b.otherTypes)) {
+        for (const ot of b.otherTypes) {
+          if (ot && typeof ot === 'string') allCatNames.push(ot);
+        }
+      }
+
+      const uniqueCats = Array.from(new Set(allCatNames.map(c => c.trim())));
+      for (const catName of uniqueCats) {
+        if (!catName) continue;
+        const key = catName.toLowerCase().trim();
+        const slug = key.replace(/[\s&]+/g, '-').replace(/[^a-z0-9-]/g, '');
+
+        if (categoryMap.has(key)) {
+          categoryMap.get(key)!.count = (categoryMap.get(key)!.count || 0) + 1;
+        } else {
+          categoryMap.set(key, {
+            id: `derived-${slug}`,
+            name: catName,
+            slug,
+            icon: 'Store',
+            description: `${catName} businesses`,
+            count: 1,
+            subcategories: [],
+          });
+        }
       }
     }
   } catch (e) {
     // ignore
   }
 
-  const result = Array.from(categoryMap.values()).sort((a, b) => a.name.localeCompare(b.name));
+  // Sort by highest business count descending (popular categories first), with alphabetical tie-breaker
+  const result = Array.from(categoryMap.values()).sort((a, b) => (b.count || 0) - (a.count || 0) || a.name.localeCompare(b.name));
   categoriesCache = { data: result, timestamp: now };
   return result;
 }
