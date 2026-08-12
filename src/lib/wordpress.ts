@@ -81,7 +81,7 @@ let listingsCache: { data: BusinessListing[]; timestamp: number } | null = null;
 let categoriesCache: { data: Category[]; timestamp: number } | null = null;
 let citiesCache: { data: LocationCity[]; timestamp: number } | null = null;
 
-const CACHE_TTL_MS = 300000; // 5 minutes in-memory cache for 0ms responses
+const CACHE_TTL_MS = 10000; // 10 seconds cache for rapid updates
 
 export function clearListingsCache(): void {
   listingsCache = null;
@@ -98,22 +98,9 @@ async function fetchAllFromWp(): Promise<BusinessListing[]> {
     return listingsCache.data;
   }
 
-  // If we have stale cache, return it instantly and revalidate in background!
-  if (listingsCache && listingsCache.data.length > 0) {
-    refreshWpListingsInBackground();
-    return listingsCache.data;
-  }
-
-  return fetchWpListingsDirectly();
-}
-
-async function refreshWpListingsInBackground() {
-  try {
-    const data = await fetchWpListingsDirectly();
-    if (data && data.length > 0) {
-      listingsCache = { data, timestamp: Date.now() };
-    }
-  } catch (e) {}
+  const freshData = await fetchWpListingsDirectly();
+  listingsCache = { data: freshData, timestamp: now };
+  return freshData;
 }
 
 async function fetchWpListingsDirectly(): Promise<BusinessListing[]> {
@@ -123,11 +110,13 @@ async function fetchWpListingsDirectly(): Promise<BusinessListing[]> {
 
   try {
     const firstRes = await fetch(
-      `${apiUrl}/wp-json/wp/v2/business_listing?per_page=100&page=1&orderby=date&order=desc&_fields=id,slug,title,meta`,
+      `${apiUrl}/wp-json/wp/v2/business_listing?per_page=100&page=1&orderby=date&order=desc&_fields=id,slug,title,meta&_t=${now}`,
       {
         cache: 'no-store',
         headers: {
           'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) LocableNextJS/1.0',
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache'
         },
         signal: AbortSignal.timeout(10000),
       }
@@ -163,21 +152,29 @@ async function fetchWpListingsDirectly(): Promise<BusinessListing[]> {
         for (let page = i; page < Math.min(i + BATCH_SIZE, totalPages + 1); page++) {
           batchPromises.push(
             fetch(
-              `${apiUrl}/wp-json/wp/v2/business_listing?per_page=100&page=${page}&orderby=date&order=desc&_fields=id,slug,title,meta`,
+              `${apiUrl}/wp-json/wp/v2/business_listing?per_page=100&page=${page}&orderby=date&order=desc&_fields=id,slug,title,meta&_t=${now}`,
               {
                 cache: 'no-store',
                 headers: {
                   'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) LocableNextJS/1.0',
+                  'Cache-Control': 'no-cache, no-store, must-revalidate',
+                  'Pragma': 'no-cache'
                 },
                 signal: AbortSignal.timeout(10000),
               }
             ).then(async (r) => {
               if (r.ok) return r.json();
-              // Small pause and retry if PHP-FPM was temporarily busy
               await new Promise((res) => setTimeout(res, 150));
               const retry = await fetch(
-                `${apiUrl}/wp-json/wp/v2/business_listing?per_page=100&page=${page}&orderby=date&order=desc&_fields=id,slug,title,meta`,
-                { cache: 'no-store', headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) LocableNextJS/1.0' } }
+                `${apiUrl}/wp-json/wp/v2/business_listing?per_page=100&page=${page}&orderby=date&order=desc&_fields=id,slug,title,meta&_t=${now}`,
+                {
+                  cache: 'no-store',
+                  headers: {
+                    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) LocableNextJS/1.0',
+                    'Cache-Control': 'no-cache, no-store, must-revalidate',
+                    'Pragma': 'no-cache'
+                  }
+                }
               );
               return retry.ok ? retry.json() : [];
             }).catch(() => [])

@@ -7,7 +7,11 @@ export async function GET() {
   try {
     const categories = await getCategories();
     return NextResponse.json(categories, {
-      headers: { 'Cache-Control': 'public, s-maxage=300, stale-while-revalidate=86400' },
+      headers: {
+        'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0',
+        'Pragma': 'no-cache',
+        'Expires': '0',
+      },
     });
   } catch (error) {
     return NextResponse.json([], { status: 200 });

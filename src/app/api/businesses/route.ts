@@ -23,7 +23,9 @@ export async function GET(request: Request) {
 
     return NextResponse.json(businesses, {
       headers: {
-        'Cache-Control': 'public, s-maxage=300, stale-while-revalidate=86400',
+        'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0',
+        'Pragma': 'no-cache',
+        'Expires': '0',
       },
     });
   } catch (error) {

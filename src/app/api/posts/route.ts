@@ -7,7 +7,11 @@ export async function GET() {
   try {
     const posts = await getBlogPosts();
     return NextResponse.json(posts, {
-      headers: { 'Cache-Control': 'public, s-maxage=300, stale-while-revalidate=86400' },
+      headers: {
+        'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0',
+        'Pragma': 'no-cache',
+        'Expires': '0',
+      },
     });
   } catch (error) {
     console.error('Error in /api/posts:', error);

@@ -2920,14 +2920,33 @@ function locable_detect_state_from_meta($state = '', $city = '', $address = '') 
     return '';
 }
 
-// ── Headless REST API CORS Headers ──
+// ── Headless REST API CORS & Zero-Cache Headers ──
 add_action('rest_api_init', function() {
+    header('Cache-Control: no-cache, no-store, must-revalidate, max-age=0, s-maxage=0');
+    header('Pragma: no-cache');
+    header('Expires: 0');
+    header('X-Accel-Expires: 0');
+
     remove_filter('rest_pre_serve_request', 'rest_send_cors_headers');
     add_filter('rest_pre_serve_request', function($value) {
         header('Access-Control-Allow-Origin: *');
         header('Access-Control-Allow-Methods: GET, POST, OPTIONS, PUT, DELETE');
         header('Access-Control-Allow-Credentials: true');
         header('Access-Control-Allow-Headers: Authorization, X-WP-Nonce, Content-Type, Origin, Accept');
+        header('Cache-Control: no-cache, no-store, must-revalidate, max-age=0, s-maxage=0');
+        header('Pragma: no-cache');
+        header('Expires: 0');
+        header('X-Accel-Expires: 0');
         return $value;
     });
 }, 15);
+
+add_filter('rest_post_dispatch', function($response) {
+    if ($response instanceof WP_REST_Response) {
+        $response->header('Cache-Control', 'no-cache, no-store, must-revalidate, max-age=0, s-maxage=0');
+        $response->header('Pragma', 'no-cache');
+        $response->header('Expires', '0');
+        $response->header('X-Accel-Expires', '0');
+    }
+    return $response;
+}, 999);
