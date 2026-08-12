@@ -6,27 +6,36 @@ import { BusinessListing, BusinessReview, Category, LocationCity, BlogPost, Lead
  * Get WordPress REST API base URL.
  */
 export function getWpApiUrl(): string {
+  // 1. Check browser localStorage first (saved via Admin WP Sync page)
+  if (typeof window !== 'undefined') {
+    const localSaved = localStorage.getItem('directory_wp_api_url');
+    if (localSaved && localSaved.trim()) {
+      return localSaved.trim().replace(/\/$/, '');
+    }
+  }
+
+  // 2. Check environment variables
   let envUrl = (
     process.env.NEXT_PUBLIC_WORDPRESS_API_URL ||
     process.env.WORDPRESS_API_URL ||
     ''
   ).trim().replace(/\/$/, '');
 
+  // If envUrl is set and is a valid remote URL (not localhost/.local), use it!
+  if (envUrl && !envUrl.includes('localhost') && !envUrl.includes('.local') && !envUrl.includes('127.0.0.1')) {
+    return envUrl;
+  }
+
+  // 3. If running in browser on localhost, allow gmb.local for local development
   if (typeof window !== 'undefined') {
-    const localSaved = localStorage.getItem('directory_wp_api_url');
-    if (localSaved && localSaved.trim()) {
-      return localSaved.trim().replace(/\/$/, '');
-    }
-
     const host = window.location.hostname;
-    const isLocal = host === 'localhost' || host === '127.0.0.1' || host.endsWith('.local');
-
-    if (!isLocal && (!envUrl || envUrl.includes('localhost') || envUrl.includes('.local') || envUrl.includes('127.0.0.1'))) {
-      return window.location.origin.replace(/\/$/, '');
+    if (host === 'localhost' || host === '127.0.0.1' || host.endsWith('.local')) {
+      if (envUrl) return envUrl;
     }
   }
 
-  return envUrl;
+  // 4. Default Live Hostinger WordPress Backend Fallback
+  return 'https://orchid-koala-307320.hostingersite.com';
 }
 
 /**
