@@ -280,36 +280,52 @@ export async function getCategories(): Promise<Category[]> {
   }
 
   const categoryMap = new Map<string, Category>();
-
-  // 2. Fetch WordPress CPT business_type taxonomy terms
   const apiUrl = getWpApiUrl();
+
+  // 1. Fetch all pages of WordPress CPT business_type taxonomy terms
   if (apiUrl) {
     try {
-      const res = await fetch(
-        `${apiUrl}/wp-json/wp/v2/business_type?per_page=100&orderby=name&order=asc`,
+      const firstRes = await fetch(
+        `${apiUrl}/wp-json/wp/v2/business_type?per_page=100&page=1&orderby=name&order=asc`,
         {
           headers: { 'User-Agent': 'LocableNextJS/1.0' },
           next: { revalidate: 3600 },
         }
       );
-      if (res.ok) {
-        const terms = await res.json();
-        if (Array.isArray(terms)) {
-          for (let i = 0; i < terms.length; i++) {
-            const t = terms[i];
-            const key = String(t.name || '').toLowerCase().trim();
-            if (!key) continue;
-            const existing = categoryMap.get(key);
-            categoryMap.set(key, {
-              id: String(t.id || `wp-cat-${i}`),
-              name: t.name,
-              slug: t.slug,
-              icon: existing?.icon || 'Store',
-              description: existing?.description || `${t.name} services & contractors`,
-              count: t.count || existing?.count || 0,
-              subcategories: existing?.subcategories || [],
-            });
+      if (firstRes.ok) {
+        const totalPages = parseInt(firstRes.headers.get('X-WP-TotalPages') || '1', 10);
+        const firstTerms = await firstRes.json();
+        let allTerms = Array.isArray(firstTerms) ? [...firstTerms] : [];
+
+        if (totalPages > 1) {
+          const pagePromises = [];
+          for (let p = 2; p <= totalPages; p++) {
+            pagePromises.push(
+              fetch(`${apiUrl}/wp-json/wp/v2/business_type?per_page=100&page=${p}&orderby=name&order=asc`, {
+                headers: { 'User-Agent': 'LocableNextJS/1.0' },
+                next: { revalidate: 3600 }
+              }).then(r => r.ok ? r.json() : []).catch(() => [])
+            );
           }
+          const restPages = await Promise.all(pagePromises);
+          for (const pageItems of restPages) {
+            if (Array.isArray(pageItems)) allTerms = allTerms.concat(pageItems);
+          }
+        }
+
+        for (let i = 0; i < allTerms.length; i++) {
+          const t = allTerms[i];
+          const key = String(t.name || '').toLowerCase().trim();
+          if (!key) continue;
+          categoryMap.set(key, {
+            id: String(t.id || `wp-cat-${i}`),
+            name: t.name,
+            slug: t.slug,
+            icon: 'Store',
+            description: `${t.name} services & contractors`,
+            count: t.count || 0,
+            subcategories: [],
+          });
         }
       }
     } catch (e) {
@@ -317,44 +333,36 @@ export async function getCategories(): Promise<Category[]> {
     }
   }
 
-  // 3. Merge derived categories from actual business listings (primary + secondary otherTypes)
+  // 2. Sync category counts and add primary listing categories
   try {
     const listings = await getBusinesses();
     for (const b of listings) {
-      const allCatNames: string[] = [];
-      if (b.type) allCatNames.push(b.type);
-      if (Array.isArray(b.otherTypes)) {
-        for (const ot of b.otherTypes) {
-          if (ot && typeof ot === 'string') allCatNames.push(ot);
-        }
-      }
+      if (!b.type) continue;
+      const key = b.type.toLowerCase().trim();
+      const slug = b.typeSlug || key.replace(/[\s&]+/g, '-').replace(/[^a-z0-9-]/g, '');
 
-      const uniqueCats = Array.from(new Set(allCatNames.map(c => c.trim())));
-      for (const catName of uniqueCats) {
-        if (!catName) continue;
-        const key = catName.toLowerCase().trim();
-        const slug = key.replace(/[\s&]+/g, '-').replace(/[^a-z0-9-]/g, '');
-
-        if (categoryMap.has(key)) {
-          categoryMap.get(key)!.count = (categoryMap.get(key)!.count || 0) + 1;
-        } else {
-          categoryMap.set(key, {
-            id: `derived-${slug}`,
-            name: catName,
-            slug,
-            icon: 'Store',
-            description: `${catName} businesses`,
-            count: 1,
-            subcategories: [],
-          });
+      if (categoryMap.has(key)) {
+        const cat = categoryMap.get(key)!;
+        if (!cat.count || cat.count === 0) {
+          cat.count = (cat.count || 0) + 1;
         }
+      } else {
+        categoryMap.set(key, {
+          id: `derived-${slug}`,
+          name: b.type,
+          slug,
+          icon: 'Store',
+          description: `${b.type} businesses`,
+          count: 1,
+          subcategories: [],
+        });
       }
     }
   } catch (e) {
     // ignore
   }
 
-  // Sort by highest business count descending (popular categories first), with alphabetical tie-breaker
+  // Sort by highest business count descending, then alphabetically
   const result = Array.from(categoryMap.values()).sort((a, b) => (b.count || 0) - (a.count || 0) || a.name.localeCompare(b.name));
   categoriesCache = { data: result, timestamp: now };
   return result;
