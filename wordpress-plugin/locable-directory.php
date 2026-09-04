@@ -868,8 +868,14 @@ function locable_ajax_import_chunk() {
             'fields'         => 'ids',
         ));
 
+        $city_name = sanitize_text_field($row['city'] ?? '');
+        $clean_slug_candidate = (!empty($row['slug']) && strpos(strtolower($row['slug']), 'chij') !== 0)
+            ? sanitize_title($row['slug'])
+            : sanitize_title($title . ($city_name ? '-' . $city_name : ''));
+
         $post_data = array(
             'post_title'   => $title,
+            'post_name'    => $clean_slug_candidate,
             'post_content' => sanitize_textarea_field($row['description'] ?? ''),
             'post_type'    => 'business_listing',
             'post_status'  => 'publish',
@@ -877,6 +883,8 @@ function locable_ajax_import_chunk() {
 
         if (!empty($existing)) {
             $post_data['ID'] = $existing[0];
+            // Do not alter post_name on updates so URLs stay permanent and never 404!
+            unset($post_data['post_name']);
             $post_id = wp_update_post($post_data, true);
             if (!is_wp_error($post_id)) $updated++; else $errors++;
         } else {
@@ -887,13 +895,18 @@ function locable_ajax_import_chunk() {
         if (is_wp_error($post_id)) continue;
 
         // ── Save all meta fields ──
+        $existing_slug = get_post_meta($post_id, 'slug', true);
+        $final_slug = (!empty($existing_slug) && strpos(strtolower($existing_slug), 'chij') !== 0)
+            ? $existing_slug
+            : $clean_slug_candidate;
+
         $meta_fields = array(
             'placeId'        => sanitize_text_field($row['placeId']        ?? ''),
             'dataId'         => sanitize_text_field($row['dataId']         ?? ''),
             'type'           => sanitize_text_field($row['type']           ?? ''),
             'typeSlug'       => sanitize_text_field($row['typeSlug']       ?? ''),
             'otherTypes'     => sanitize_text_field($row['otherTypes']     ?? ''),
-            'slug'           => sanitize_title($row['slug']                ?? $placeId),
+            'slug'           => $final_slug,
             'city'           => sanitize_text_field($row['city']           ?? ''),
             'state'          => locable_detect_state_from_meta(
                                   sanitize_text_field($row['state'] ?? ''),

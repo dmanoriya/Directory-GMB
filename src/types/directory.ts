@@ -4,6 +4,8 @@ export interface BusinessListing {
   dataId: string;
   slug: string;
   rawSlug?: string;
+  wpSlug?: string;
+  aliases?: string[];
   title: string;
   type: string;
   typeSlug: string;

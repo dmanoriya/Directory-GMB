@@ -253,39 +253,83 @@ function filterListingsDataset(listings: BusinessListing[], filters?: {
 }
 
 export const getBusinessBySlug = cache(async (slugOrPlaceId: string): Promise<BusinessListing | null> => {
-  const target = slugOrPlaceId.toLowerCase().trim();
+  const target = (slugOrPlaceId || '').toLowerCase().trim();
+  if (!target) return null;
 
-  const matchListing = (b: BusinessListing) => {
-    const s = b.slug.toLowerCase();
-    const raw = (b.rawSlug || '').toLowerCase();
-    const pid = b.placeId.toLowerCase();
-    const seo = createSeoSlug(b.title, b.city, b.placeId).toLowerCase();
+  const isMatch = (b: BusinessListing) => {
+    // 1. Primary canonical slug match
+    if (b.slug.toLowerCase() === target) return true;
+
+    // 2. Aliases match (all historical, title-derived, WP post slugs, placeId, post ID)
+    if (b.aliases && b.aliases.some(a => a.toLowerCase() === target)) return true;
+
+    // 3. Standard identifiers
+    if (b.rawSlug?.toLowerCase() === target) return true;
+    if (b.wpSlug?.toLowerCase() === target) return true;
+    if (b.placeId.toLowerCase() === target) return true;
+    if (b.dataId?.toLowerCase() === target) return true;
+    if (b.id === target) return true;
+
+    // 4. Dynamic title SEO match
+    const titleSeo = createSeoSlug(b.title, b.city, b.placeId).toLowerCase();
+    if (titleSeo === target) return true;
+
     const titleSlug = b.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+    if (titleSlug === target) return true;
 
-    return (
-      s === target ||
-      raw === target ||
-      pid === target ||
-      seo === target ||
-      titleSlug === target ||
-      (s.length > 5 && target.length > 5 && (s.startsWith(target) || target.startsWith(s))) ||
-      (raw.length > 5 && target.length > 5 && (raw.startsWith(target) || target.startsWith(raw)))
-    );
+    // 5. City variations (target with or without city suffix)
+    const cityClean = (b.city || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+    if (cityClean) {
+      if (`${target}-${cityClean}` === b.slug.toLowerCase()) return true;
+      if (`${b.slug.toLowerCase()}-${cityClean}` === target) return true;
+      const targetNoCity = target.replace(new RegExp(`-${cityClean}$`), '');
+      const slugNoCity = b.slug.toLowerCase().replace(new RegExp(`-${cityClean}$`), '');
+      if (targetNoCity && targetNoCity === slugNoCity) return true;
+      if (b.wpSlug && targetNoCity === b.wpSlug.toLowerCase()) return true;
+    }
+
+    // 6. Number normalization (e.g. matching "the-studio-med-spa2" to "the-studio-med-spa")
+    const stripDigits = (s: string) => s.replace(/[0-9]+/g, '').replace(/-+/g, '-').replace(/^-+|-+$/g, '');
+    const tNoDigits = stripDigits(target);
+    const sNoDigits = stripDigits(b.slug);
+    if (tNoDigits.length > 3 && sNoDigits.length > 3) {
+      if (tNoDigits === sNoDigits) return true;
+      if (stripDigits(titleSeo) === tNoDigits) return true;
+      if (b.wpSlug && stripDigits(b.wpSlug) === tNoDigits) return true;
+    }
+
+    // 7. Token overlap (e.g. 75%+ core words match)
+    const tTokens = target.split('-').filter(w => w.length > 2 && w !== 'san' && w !== 'diego' && w !== 'ca');
+    const slugTokens = b.slug.toLowerCase().split('-').filter(w => w.length > 2 && w !== 'san' && w !== 'diego' && w !== 'ca');
+    if (tTokens.length >= 2 && slugTokens.length >= 2) {
+      const matched = tTokens.filter(tok => slugTokens.some(st => st.includes(tok) || tok.includes(st)));
+      if (matched.length / Math.min(tTokens.length, slugTokens.length) >= 0.75) {
+        return true;
+      }
+    }
+
+    // 8. Prefix / Substring for long slugs
+    if (target.length > 6 && b.slug.length > 6) {
+      if (target.startsWith(b.slug) || b.slug.startsWith(target)) return true;
+    }
+
+    return false;
   };
 
-  // Fast check 1: In-memory cache hit for instant 0ms response!
+  // Check 1: In-memory cache hit for instant 0ms response!
   if (listingsCache && listingsCache.data.length > 0) {
-    const cachedMatch = listingsCache.data.find(matchListing);
+    const cachedMatch = listingsCache.data.find(isMatch);
     if (cachedMatch) return cachedMatch;
   }
 
   const apiUrl = getWpApiUrl();
 
-  // Fast check 2: Direct single-item lookup by slug via WP REST API
+  // Check 2: Direct queries to WordPress REST API
   if (apiUrl) {
+    // 2a. Direct slug lookup
     try {
       const res = await fetch(
-        `${apiUrl}/wp-json/wp/v2/business_listing?slug=${encodeURIComponent(slugOrPlaceId)}&_fields=id,slug,title,meta`,
+        `${apiUrl}/wp-json/wp/v2/business_listing?slug=${encodeURIComponent(slugOrPlaceId)}&_fields=id,slug,title,meta&_t=${Date.now()}`,
         {
           headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) LocableNextJS/1.0' },
           signal: AbortSignal.timeout(5000),
@@ -301,10 +345,31 @@ export const getBusinessBySlug = cache(async (slugOrPlaceId: string): Promise<Bu
       console.warn('[WordPress] Direct slug lookup warning:', e);
     }
 
-    // Try search query by slug keywords if direct slug fetch returns empty
+    // 2b. Direct slug lookup without city suffix (e.g. querying 'the-studio-med-spa' when URL has 'the-studio-med-spa-san-diego')
+    const baseSlug = slugOrPlaceId.replace(/-(san-diego|chula-vista|oceanside|carlsbad|escondido|la-mesa|el-cajon|encinitas|san-marcos|vista|poway|coronado|del-mar|imperial-beach|lemon-grove|national-city|santee|solana-beach)/i, '');
+    if (baseSlug !== slugOrPlaceId) {
+      try {
+        const resBase = await fetch(
+          `${apiUrl}/wp-json/wp/v2/business_listing?slug=${encodeURIComponent(baseSlug)}&_fields=id,slug,title,meta&_t=${Date.now()}`,
+          {
+            headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) LocableNextJS/1.0' },
+            signal: AbortSignal.timeout(5000),
+          }
+        );
+        if (resBase.ok) {
+          const items = await resBase.json();
+          if (Array.isArray(items) && items.length > 0) {
+            return mapWpBusinessToFormat(items[0]);
+          }
+        }
+      } catch (e) {}
+    }
+
+    // 2c. Try search query by slug keywords
     try {
+      const cleanSearch = slugOrPlaceId.replace(/-/g, ' ').replace(/[0-9]+/g, '').trim();
       const resSearch = await fetch(
-        `${apiUrl}/wp-json/wp/v2/business_listing?search=${encodeURIComponent(slugOrPlaceId.replace(/-/g, ' '))}&per_page=10&_fields=id,slug,title,meta`,
+        `${apiUrl}/wp-json/wp/v2/business_listing?search=${encodeURIComponent(cleanSearch)}&per_page=15&_fields=id,slug,title,meta&_t=${Date.now()}`,
         {
           headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) LocableNextJS/1.0' },
           signal: AbortSignal.timeout(5000),
@@ -314,16 +379,16 @@ export const getBusinessBySlug = cache(async (slugOrPlaceId: string): Promise<Bu
         const items = await resSearch.json();
         if (Array.isArray(items) && items.length > 0) {
           const mapped = items.map(mapWpBusinessToFormat);
-          const found = mapped.find(matchListing);
+          const found = mapped.find(isMatch);
           if (found) return found;
         }
       }
     } catch (e) {}
   }
 
-  // Fast check 3: Full dataset search
+  // Check 3: Full dataset search
   const all = await getBusinesses();
-  return all.find(matchListing) || null;
+  return all.find(isMatch) || null;
 });
 
 /**
@@ -788,12 +853,52 @@ function mapWpBusinessToFormat(item: Record<string, unknown>): BusinessListing {
 
   const city = String(meta.city || 'San Diego');
   const placeIdStr = String(meta.placeId || item.id || '');
-  const rawSlug = String(meta.slug || item.slug || '').trim();
+  const cleanCity = (city || '').toLowerCase().replace(/[^a-z0-9\s-]/g, '').trim().replace(/\s+/g, '-');
 
-  // Create clean SEO friendly slug (max 6 hyphenated words, filtering out keyword-stuffed slugs)
-  const slug = (rawSlug && !rawSlug.toLowerCase().startsWith('chij') && rawSlug.includes('-') && rawSlug.split('-').length <= 6)
-    ? rawSlug
-    : createSeoSlug(title, city, placeIdStr);
+  // WordPress native post slug (post_name, e.g. 'the-studio-med-spa')
+  const wpPostSlug = String(item.slug || '').trim().toLowerCase();
+  const rawMetaSlug = String(meta.slug || '').trim().toLowerCase();
+
+  // Determine canonical permanent slug:
+  // 1. If meta.slug is clean human-readable slug (not starting with chij and not purely numeric): use it!
+  // 2. Otherwise if wpPostSlug is valid and not starting with chij: use it! (append city if not already present)
+  // 3. Otherwise generate from title + city + placeId
+  let slug = '';
+  if (rawMetaSlug && !rawMetaSlug.startsWith('chij') && !/^\d+$/.test(rawMetaSlug) && rawMetaSlug.includes('-') && rawMetaSlug.split('-').length <= 6) {
+    slug = rawMetaSlug;
+  } else if (wpPostSlug && !wpPostSlug.startsWith('chij') && wpPostSlug !== 'business_listing' && !/^\d+$/.test(wpPostSlug)) {
+    slug = (cleanCity && !wpPostSlug.includes(cleanCity)) ? `${wpPostSlug}-${cleanCity}` : wpPostSlug;
+  } else {
+    slug = createSeoSlug(title, city, placeIdStr);
+  }
+
+  // Collect all aliases so ANY old URL, title variation, placeId, or WP slug NEVER 404s!
+  const aliasesSet = new Set<string>();
+  if (wpPostSlug) aliasesSet.add(wpPostSlug);
+  if (cleanCity && wpPostSlug && !wpPostSlug.includes(cleanCity)) aliasesSet.add(`${wpPostSlug}-${cleanCity}`);
+  if (rawMetaSlug) aliasesSet.add(rawMetaSlug);
+  if (placeIdStr) aliasesSet.add(placeIdStr.toLowerCase());
+  if (meta.dataId) aliasesSet.add(String(meta.dataId).toLowerCase());
+  if (item.id) aliasesSet.add(String(item.id));
+
+  // Also include current title SEO slug and clean title slug as aliases
+  const currentTitleSeo = createSeoSlug(title, city, placeIdStr).toLowerCase();
+  aliasesSet.add(currentTitleSeo);
+  const currentTitleClean = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+  if (currentTitleClean) {
+    aliasesSet.add(currentTitleClean);
+    if (cleanCity && !currentTitleClean.includes(cleanCity)) {
+      aliasesSet.add(`${currentTitleClean}-${cleanCity}`);
+    }
+  }
+
+  // Also include version without numbers (e.g. "the-studio-med-spa2" -> "the-studio-med-spa")
+  const strippedNumber = slug.replace(/[0-9]+/g, '').replace(/-+/g, '-').replace(/^-+|-+$/g, '');
+  if (strippedNumber && strippedNumber.length > 3) {
+    aliasesSet.add(strippedNumber);
+  }
+
+  const aliases = Array.from(aliasesSet).filter(a => a && a !== slug);
 
   const citySlug = String(meta.citySlug || city.toLowerCase().replace(/\s+/g, '-'));
   const type = String(meta.type || 'General');
@@ -808,7 +913,9 @@ function mapWpBusinessToFormat(item: Record<string, unknown>): BusinessListing {
     placeId:       String(meta.placeId || item.id || ''),
     dataId:        String(meta.dataId || ''),
     slug,
-    rawSlug,
+    rawSlug:       rawMetaSlug || wpPostSlug,
+    wpSlug:        wpPostSlug,
+    aliases,
     title,
     type,
     typeSlug,

@@ -40,10 +40,14 @@ export async function generateMetadata({ params }: ListingPageProps) {
   return {
     title: `${business.title} | San Diego Directory`,
     description: `${business.title} located at ${business.address}. Rated ${business.rating} stars with ${business.reviews} reviews on Google Maps.`,
+    alternates: {
+      canonical: `https://sandiegobusinesscircle.com/listing/${business.slug}`,
+    },
     openGraph: {
       title: `${business.title} | San Diego Directory`,
       description: business.description,
-      images: [business.thumbnail]
+      images: [business.thumbnail],
+      url: `https://sandiegobusinesscircle.com/listing/${business.slug}`,
     }
   };
 }
