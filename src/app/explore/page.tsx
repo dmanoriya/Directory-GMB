@@ -18,7 +18,7 @@ function ExploreContent() {
   const searchParams = useSearchParams();
 
   const [allBusinesses, setAllBusinesses] = useState<BusinessListing[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [filterDrawerOpen, setFilterDrawerOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
 
@@ -55,13 +55,17 @@ function ExploreContent() {
   // Fetch live businesses from WordPress via API route in background
   useEffect(() => {
     let active = true;
+    setLoading(true);
     fetchCachedBusinesses()
       .then((data: BusinessListing[]) => {
         if (active && Array.isArray(data)) {
           setAllBusinesses(data);
         }
       })
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => {
+        if (active) setLoading(false);
+      });
 
     return () => { active = false; };
   }, []);

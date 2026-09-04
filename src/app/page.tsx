@@ -245,6 +245,7 @@ export default function HomePage() {
   const [catSearchFilter, setCatSearchFilter] = useState('');
 
   const [auditModalOpen, setAuditModalOpen] = useState(false);
+  const [dataLoading, setDataLoading] = useState(true);
   const [allBusinesses, setAllBusinesses] = useState<BusinessListing[]>([]);
   const [dynamicCategories, setDynamicCategories] = useState<Category[]>([]);
   const [dynamicCities, setDynamicCities] = useState<LocationCity[]>([]);
@@ -262,11 +263,14 @@ export default function HomePage() {
       fetchCachedPosts()
     ]).then(([biz, cats, cits, posts]) => {
       if (!active) return;
-      if (Array.isArray(biz)) setAllBusinesses(biz);
-      if (Array.isArray(cats)) setDynamicCategories(cats);
-      if (Array.isArray(cits)) setDynamicCities(cits);
-      if (Array.isArray(posts)) setDynamicPosts(posts);
-    }).catch(() => {});
+      if (Array.isArray(biz) && biz.length > 0) setAllBusinesses(biz);
+      if (Array.isArray(cats) && cats.length > 0) setDynamicCategories(cats);
+      if (Array.isArray(cits) && cits.length > 0) setDynamicCities(cits);
+      if (Array.isArray(posts) && posts.length > 0) setDynamicPosts(posts);
+      setDataLoading(false);
+    }).catch(() => {
+      if (active) setDataLoading(false);
+    });
 
     return () => { active = false; };
   }, []);
@@ -880,7 +884,23 @@ export default function HomePage() {
             </p>
           </div>
 
-          {dynamicCategories.length === 0 ? (
+          {dataLoading ? (
+            <div className="homepage-category-grid">
+              {Array.from({ length: 8 }).map((_, i) => (
+                <div
+                  key={i}
+                  style={{
+                    background: '#ffffff',
+                    height: '160px',
+                    borderRadius: '20px',
+                    border: '1px solid #EBE4D8',
+                    animation: 'pulse 1.5s infinite ease-in-out',
+                    opacity: 0.6
+                  }}
+                />
+              ))}
+            </div>
+          ) : dynamicCategories.length === 0 ? (
             <div style={{ padding: '3.5rem 2rem', textAlign: 'center', background: '#ffffff', borderRadius: '20px', border: '1px dashed #EBE4D8', maxWidth: '560px', margin: '0 auto' }}>
               <Building2 size={36} color="#999999" style={{ marginBottom: '0.75rem' }} />
               <h3 style={{ fontFamily: 'var(--font-heading)', fontSize: '1.2rem', fontWeight: '700', color: '#111111', marginBottom: '0.5rem' }}>
@@ -1026,7 +1046,27 @@ export default function HomePage() {
             </Link>
           </div>
 
-          {featuredListings.length === 0 ? (
+          {dataLoading ? (
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fill, minmax(310px, 1fr))',
+              gap: '1.75rem'
+            }}>
+              {Array.from({ length: 6 }).map((_, i) => (
+                <div
+                  key={i}
+                  style={{
+                    background: '#ffffff',
+                    height: '380px',
+                    borderRadius: '20px',
+                    border: '1px solid #EBE4D8',
+                    animation: 'pulse 1.5s infinite ease-in-out',
+                    opacity: 0.6
+                  }}
+                />
+              ))}
+            </div>
+          ) : featuredListings.length === 0 ? (
             <div style={{ padding: '3.5rem 2rem', textAlign: 'center', background: '#FAF6F0', borderRadius: '20px', border: '1px solid #EBE4D8', maxWidth: '560px', margin: '0 auto' }}>
               <div style={{ fontFamily: 'var(--font-heading)', fontSize: '1.2rem', fontWeight: '700', color: '#111111', marginBottom: '0.5rem' }}>
                 No Business Listings Found

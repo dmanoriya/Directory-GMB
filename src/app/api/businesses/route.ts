@@ -13,12 +13,16 @@ export async function GET(request: Request) {
   const category = searchParams.get('category') || undefined;
   const city = searchParams.get('city') || undefined;
   const search = searchParams.get('q') || undefined;
+  const limit = searchParams.get('limit') ? parseInt(searchParams.get('limit')!, 10) : undefined;
+  const page = searchParams.get('page') ? parseInt(searchParams.get('page')!, 10) : undefined;
 
   try {
     const businesses = await getBusinesses({
       categorySlug: category,
       citySlug: city,
       searchQuery: search,
+      limit,
+      page,
     });
 
     return NextResponse.json(businesses, {

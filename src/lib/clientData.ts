@@ -1,5 +1,4 @@
 import { BusinessListing, Category, LocationCity, BlogPost, SiteBranding } from '@/types/directory';
-import { getBusinesses, getCategories, getCities, getBlogPosts } from '@/lib/wordpress';
 
 interface CacheItem<T> {
   data: T;
@@ -26,25 +25,19 @@ export async function fetchCachedBusinesses(): Promise<BusinessListing[]> {
   if (pendingBusinessPromise) return pendingBusinessPromise;
 
   pendingBusinessPromise = (async () => {
-    try {
-      const r = await fetch('/api/businesses');
-      if (r.ok) {
-        const data = await r.json();
-        if (Array.isArray(data) && data.length > 0) {
-          businessCache = { data, timestamp: Date.now() };
-          return data;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const r = await fetch('/api/businesses');
+        if (r.ok) {
+          const data = await r.json();
+          if (Array.isArray(data) && data.length > 0) {
+            businessCache = { data, timestamp: Date.now() };
+            return data;
+          }
         }
-      }
-    } catch (e) {}
-
-    // Fallback: Direct fetch from WordPress REST API if API route returns empty
-    try {
-      const direct = await getBusinesses();
-      if (Array.isArray(direct) && direct.length > 0) {
-        businessCache = { data: direct, timestamp: Date.now() };
-        return direct;
-      }
-    } catch (e) {}
+      } catch (e) {}
+      if (attempt === 0) await new Promise((res) => setTimeout(res, 300));
+    }
 
     return businessCache ? businessCache.data : [];
   })().finally(() => {
@@ -62,24 +55,19 @@ export async function fetchCachedCategories(): Promise<Category[]> {
   if (pendingCategoryPromise) return pendingCategoryPromise;
 
   pendingCategoryPromise = (async () => {
-    try {
-      const r = await fetch('/api/categories');
-      if (r.ok) {
-        const data = await r.json();
-        if (Array.isArray(data) && data.length > 0) {
-          categoryCache = { data, timestamp: Date.now() };
-          return data;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const r = await fetch('/api/categories');
+        if (r.ok) {
+          const data = await r.json();
+          if (Array.isArray(data) && data.length > 0) {
+            categoryCache = { data, timestamp: Date.now() };
+            return data;
+          }
         }
-      }
-    } catch (e) {}
-
-    try {
-      const direct = await getCategories();
-      if (Array.isArray(direct) && direct.length > 0) {
-        categoryCache = { data: direct, timestamp: Date.now() };
-        return direct;
-      }
-    } catch (e) {}
+      } catch (e) {}
+      if (attempt === 0) await new Promise((res) => setTimeout(res, 300));
+    }
 
     return categoryCache ? categoryCache.data : [];
   })().finally(() => {
@@ -97,24 +85,19 @@ export async function fetchCachedCities(): Promise<LocationCity[]> {
   if (pendingCityPromise) return pendingCityPromise;
 
   pendingCityPromise = (async () => {
-    try {
-      const r = await fetch('/api/cities');
-      if (r.ok) {
-        const data = await r.json();
-        if (Array.isArray(data) && data.length > 0) {
-          cityCache = { data, timestamp: Date.now() };
-          return data;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const r = await fetch('/api/cities');
+        if (r.ok) {
+          const data = await r.json();
+          if (Array.isArray(data) && data.length > 0) {
+            cityCache = { data, timestamp: Date.now() };
+            return data;
+          }
         }
-      }
-    } catch (e) {}
-
-    try {
-      const direct = await getCities();
-      if (Array.isArray(direct) && direct.length > 0) {
-        cityCache = { data: direct, timestamp: Date.now() };
-        return direct;
-      }
-    } catch (e) {}
+      } catch (e) {}
+      if (attempt === 0) await new Promise((res) => setTimeout(res, 300));
+    }
 
     return cityCache ? cityCache.data : [];
   })().finally(() => {
@@ -132,24 +115,19 @@ export async function fetchCachedPosts(): Promise<BlogPost[]> {
   if (pendingPostPromise) return pendingPostPromise;
 
   pendingPostPromise = (async () => {
-    try {
-      const r = await fetch('/api/posts');
-      if (r.ok) {
-        const data = await r.json();
-        if (Array.isArray(data) && data.length > 0) {
-          postCache = { data, timestamp: Date.now() };
-          return data;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const r = await fetch('/api/posts');
+        if (r.ok) {
+          const data = await r.json();
+          if (Array.isArray(data) && data.length > 0) {
+            postCache = { data, timestamp: Date.now() };
+            return data;
+          }
         }
-      }
-    } catch (e) {}
-
-    try {
-      const direct = await getBlogPosts();
-      if (Array.isArray(direct) && direct.length > 0) {
-        postCache = { data: direct, timestamp: Date.now() };
-        return direct;
-      }
-    } catch (e) {}
+      } catch (e) {}
+      if (attempt === 0) await new Promise((res) => setTimeout(res, 300));
+    }
 
     return postCache ? postCache.data : [];
   })().finally(() => {

@@ -83,13 +83,15 @@ export async function testWpConnection(url?: string): Promise<{ success: boolean
 let listingsCache: { data: BusinessListing[]; timestamp: number } | null = null;
 let categoriesCache: { data: Category[]; timestamp: number } | null = null;
 let citiesCache: { data: LocationCity[]; timestamp: number } | null = null;
+let activeListingsPromise: Promise<BusinessListing[]> | null = null;
 
-const CACHE_TTL_MS = 10000; // 10 seconds cache for rapid updates
+const CACHE_TTL_MS = 15 * 60 * 1000; // 15 minutes cache
 
 export function clearListingsCache(): void {
   listingsCache = null;
   categoriesCache = null;
   citiesCache = null;
+  activeListingsPromise = null;
 }
 
 /**
@@ -142,23 +144,37 @@ export async function getSiteBranding(): Promise<SiteBranding> {
 }
 
 /**
- * Fetch ALL business listings from WordPress REST API with auto-pagination.
+ * Fetch ALL business listings from WordPress REST API with auto-pagination and promise deduplication.
  */
 async function fetchAllFromWp(): Promise<BusinessListing[]> {
   const now = Date.now();
-  if (listingsCache && (now - listingsCache.timestamp < CACHE_TTL_MS)) {
+  if (listingsCache && (now - listingsCache.timestamp < CACHE_TTL_MS) && listingsCache.data.length > 0) {
     return listingsCache.data;
   }
 
-  const freshData = await fetchWpListingsDirectly();
-  listingsCache = { data: freshData, timestamp: now };
-  return freshData;
+  if (activeListingsPromise) {
+    return activeListingsPromise;
+  }
+
+  activeListingsPromise = (async () => {
+    try {
+      const freshData = await fetchWpListingsDirectly();
+      if (freshData.length > 0) {
+        listingsCache = { data: freshData, timestamp: Date.now() };
+      }
+      return freshData;
+    } finally {
+      activeListingsPromise = null;
+    }
+  })();
+
+  return activeListingsPromise;
 }
 
 async function fetchWpListingsDirectly(): Promise<BusinessListing[]> {
   const now = Date.now();
   const apiUrl = getWpApiUrl();
-  if (!apiUrl) return [];
+  if (!apiUrl) return listingsCache ? listingsCache.data : [];
 
   try {
     const firstRes = await fetch(
@@ -170,19 +186,19 @@ async function fetchWpListingsDirectly(): Promise<BusinessListing[]> {
           'Cache-Control': 'no-cache, no-store, must-revalidate',
           'Pragma': 'no-cache'
         },
-        signal: AbortSignal.timeout(10000),
+        signal: AbortSignal.timeout(12000),
       }
     );
 
     if (!firstRes.ok) {
       console.warn(`[WordPress] API returned HTTP ${firstRes.status}`);
-      return [];
+      return listingsCache ? listingsCache.data : [];
     }
 
     const ct = firstRes.headers.get('content-type') || '';
     if (!ct.includes('application/json')) {
       console.warn('[WordPress] Response is not JSON (got:', ct, '). Check WordPress REST API settings.');
-      return [];
+      return listingsCache ? listingsCache.data : [];
     }
 
     const totalPages = parseInt(firstRes.headers.get('X-WP-TotalPages') || '1', 10);
@@ -191,14 +207,19 @@ async function fetchWpListingsDirectly(): Promise<BusinessListing[]> {
 
     if (!Array.isArray(firstPage) || firstPage.length === 0) {
       console.log('[WordPress] 0 business listings found in WordPress.');
-      listingsCache = { data: [], timestamp: now };
-      return [];
+      return listingsCache ? listingsCache.data : [];
     }
 
     let allPosts = [...firstPage];
 
+    // Seed cache immediately with the first 100 listings so callers get fast responses
+    const initialMapped = allPosts.map(mapWpBusinessToFormat);
+    if (!listingsCache || listingsCache.data.length === 0) {
+      listingsCache = { data: initialMapped, timestamp: now };
+    }
+
     if (totalPages > 1) {
-      const BATCH_SIZE = 10;
+      const BATCH_SIZE = 4;
       for (let i = 2; i <= totalPages; i += BATCH_SIZE) {
         const batchPromises: Promise<unknown[]>[] = [];
         for (let page = i; page < Math.min(i + BATCH_SIZE, totalPages + 1); page++) {
@@ -212,11 +233,11 @@ async function fetchWpListingsDirectly(): Promise<BusinessListing[]> {
                   'Cache-Control': 'no-cache, no-store, must-revalidate',
                   'Pragma': 'no-cache'
                 },
-                signal: AbortSignal.timeout(10000),
+                signal: AbortSignal.timeout(12000),
               }
             ).then(async (r) => {
               if (r.ok) return r.json();
-              await new Promise((res) => setTimeout(res, 150));
+              await new Promise((res) => setTimeout(res, 200));
               const retry = await fetch(
                 `${apiUrl}/wp-json/wp/v2/business_listing?per_page=100&page=${page}&orderby=date&order=desc&_fields=id,slug,title,meta&_t=${now}`,
                 {
@@ -236,6 +257,10 @@ async function fetchWpListingsDirectly(): Promise<BusinessListing[]> {
         for (const batch of batchResults) {
           if (Array.isArray(batch)) allPosts = allPosts.concat(batch);
         }
+        // Update incremental cache
+        listingsCache = { data: allPosts.map(mapWpBusinessToFormat), timestamp: now };
+        // Gentle delay to avoid choking local PHP-FPM
+        await new Promise((r) => setTimeout(r, 60));
       }
     }
 
@@ -258,6 +283,8 @@ export async function getBusinesses(filters?: {
   searchQuery?: string;
   minRating?: number;
   featuredOnly?: boolean;
+  limit?: number;
+  page?: number;
 }): Promise<BusinessListing[]> {
   const wpListings = await fetchAllFromWp();
   return filterListingsDataset(wpListings, filters);
@@ -269,6 +296,8 @@ function filterListingsDataset(listings: BusinessListing[], filters?: {
   searchQuery?: string;
   minRating?: number;
   featuredOnly?: boolean;
+  limit?: number;
+  page?: number;
 }): BusinessListing[] {
   let results = [...listings];
 
@@ -299,6 +328,12 @@ function filterListingsDataset(listings: BusinessListing[], filters?: {
   }
   if (filters?.minRating) {
     results = results.filter((b) => b.rating >= (filters.minRating || 0));
+  }
+
+  if (filters?.limit && filters.limit > 0) {
+    const page = filters.page && filters.page > 0 ? filters.page : 1;
+    const start = (page - 1) * filters.limit;
+    return results.slice(start, start + filters.limit);
   }
 
   return results;
@@ -448,21 +483,27 @@ export const getBusinessBySlug = cache(async (slugOrPlaceId: string): Promise<Bu
  */
 export async function getCategories(): Promise<Category[]> {
   const now = Date.now();
-  if (categoriesCache && (now - categoriesCache.timestamp < CACHE_TTL_MS)) {
+  if (categoriesCache && (now - categoriesCache.timestamp < CACHE_TTL_MS) && categoriesCache.data.length > 0) {
     return categoriesCache.data;
   }
 
   const categoryMap = new Map<string, Category>();
-  const apiUrl = getWpApiUrl();
+
+  // Initialize with predefined categories
+  for (const cat of MOCK_CATEGORIES) {
+    categoryMap.set(cat.name.toLowerCase().trim(), { ...cat, count: 0 });
+  }
 
   // 1. Fetch all pages of WordPress CPT business_type taxonomy terms
+  const apiUrl = getWpApiUrl();
   if (apiUrl) {
     try {
       const firstRes = await fetch(
-        `${apiUrl}/wp-json/wp/v2/business_type?per_page=100&page=1&orderby=name&order=asc`,
+        `${apiUrl}/wp-json/wp/v2/business_type?per_page=100&page=1&orderby=count&order=desc`,
         {
           headers: { 'User-Agent': 'LocableNextJS/1.0' },
-          next: { revalidate: 3600 },
+          signal: AbortSignal.timeout(6000),
+          cache: 'no-store',
         }
       );
       if (firstRes.ok) {
@@ -472,11 +513,13 @@ export async function getCategories(): Promise<Category[]> {
 
         if (totalPages > 1) {
           const pagePromises = [];
-          for (let p = 2; p <= totalPages; p++) {
+          const maxPages = Math.min(totalPages, 6);
+          for (let p = 2; p <= maxPages; p++) {
             pagePromises.push(
-              fetch(`${apiUrl}/wp-json/wp/v2/business_type?per_page=100&page=${p}&orderby=name&order=asc`, {
+              fetch(`${apiUrl}/wp-json/wp/v2/business_type?per_page=100&page=${p}&orderby=count&order=desc`, {
                 headers: { 'User-Agent': 'LocableNextJS/1.0' },
-                next: { revalidate: 3600 }
+                signal: AbortSignal.timeout(6000),
+                cache: 'no-store',
               }).then(r => r.ok ? r.json() : []).catch(() => [])
             );
           }
@@ -506,20 +549,14 @@ export async function getCategories(): Promise<Category[]> {
     }
   }
 
-  // 2. Sync category counts and add primary listing categories
-  try {
-    const listings = await getBusinesses();
-    for (const b of listings) {
+  // 2. Synchronously check in-memory cached listings (if any) without triggering a fetch
+  if (listingsCache && listingsCache.data.length > 0) {
+    for (const b of listingsCache.data) {
       if (!b.type) continue;
       const key = b.type.toLowerCase().trim();
       const slug = b.typeSlug || key.replace(/[\s&]+/g, '-').replace(/[^a-z0-9-]/g, '');
 
-      if (categoryMap.has(key)) {
-        const cat = categoryMap.get(key)!;
-        if (!cat.count || cat.count === 0) {
-          cat.count = (cat.count || 0) + 1;
-        }
-      } else {
+      if (!categoryMap.has(key)) {
         categoryMap.set(key, {
           id: `derived-${slug}`,
           name: b.type,
@@ -531,13 +568,13 @@ export async function getCategories(): Promise<Category[]> {
         });
       }
     }
-  } catch (e) {
-    // ignore
   }
 
   // Sort by highest business count descending, then alphabetically
   const result = Array.from(categoryMap.values()).sort((a, b) => (b.count || 0) - (a.count || 0) || a.name.localeCompare(b.name));
-  categoriesCache = { data: result, timestamp: now };
+  if (result.length > 0) {
+    categoriesCache = { data: result, timestamp: now };
+  }
   return result;
 }
 
@@ -568,22 +605,59 @@ export function cleanCityName(rawCity: string): string {
  */
 export async function getCities(): Promise<LocationCity[]> {
   const now = Date.now();
-  if (citiesCache && (now - citiesCache.timestamp < CACHE_TTL_MS)) {
+  if (citiesCache && (now - citiesCache.timestamp < CACHE_TTL_MS) && citiesCache.data.length > 0) {
     return citiesCache.data;
   }
 
-  const listings = await getBusinesses();
-
   const cityMap = new Map<string, { name: string; slug: string; state: string; count: number }>();
-  for (const b of listings) {
-    const cityName = cleanCityName(b.city);
-    if (!cityName) continue;
+  const apiUrl = getWpApiUrl();
 
-    const slug = cityName.toLowerCase().replace(/\s+/g, '-');
-    if (cityMap.has(slug)) {
-      cityMap.get(slug)!.count++;
-    } else {
-      cityMap.set(slug, { name: cityName, slug, state: b.state || 'CA', count: 1 });
+  // 1. Fetch from WordPress business_location taxonomy directly
+  if (apiUrl) {
+    try {
+      const res = await fetch(
+        `${apiUrl}/wp-json/wp/v2/business_location?per_page=100&orderby=count&order=desc`,
+        {
+          headers: { 'User-Agent': 'LocableNextJS/1.0' },
+          signal: AbortSignal.timeout(6000),
+          cache: 'no-store',
+        }
+      );
+      if (res.ok) {
+        const terms = await res.json();
+        if (Array.isArray(terms)) {
+          for (const t of terms) {
+            const cityName = cleanCityName(t.name);
+            if (!cityName) continue;
+            const slug = t.slug || cityName.toLowerCase().replace(/\s+/g, '-');
+            cityMap.set(slug, {
+              name: cityName,
+              slug,
+              state: 'CA',
+              count: t.count || 0,
+            });
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('[WordPress] business_location taxonomy fetch warning:', e);
+    }
+  }
+
+  // 2. Synchronously check in-memory cached listings (if any) without triggering a fetch
+  if (listingsCache && listingsCache.data.length > 0) {
+    for (const b of listingsCache.data) {
+      const cityName = cleanCityName(b.city);
+      if (!cityName) continue;
+
+      const slug = cityName.toLowerCase().replace(/\s+/g, '-');
+      if (cityMap.has(slug)) {
+        if (!cityMap.get(slug)!.count) {
+          cityMap.get(slug)!.count++;
+        }
+      } else {
+        cityMap.set(slug, { name: cityName, slug, state: b.state || 'CA', count: 1 });
+      }
     }
   }
 
@@ -606,10 +680,12 @@ export async function getCities(): Promise<LocationCity[]> {
         };
       });
   } else {
-    result = [];
+    result = [...MOCK_CITIES];
   }
 
-  citiesCache = { data: result, timestamp: now };
+  if (result.length > 0) {
+    citiesCache = { data: result, timestamp: now };
+  }
   return result;
 }
 
