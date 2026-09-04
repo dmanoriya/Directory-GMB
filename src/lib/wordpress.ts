@@ -34,8 +34,8 @@ export function getWpApiUrl(): string {
     }
   }
 
-  // 4. Default Live Hostinger WordPress Backend Fallback
-  return 'https://orchid-koala-307320.hostingersite.com';
+  // 4. Default Live WordPress Backend Fallback
+  return 'https://admin.sandiegobusinesscircle.com';
 }
 
 /**
