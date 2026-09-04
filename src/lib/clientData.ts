@@ -162,18 +162,16 @@ export async function fetchCachedPosts(): Promise<BlogPost[]> {
 let brandingCacheItem: CacheItem<SiteBranding> | null = null;
 let pendingBrandingPromise: Promise<SiteBranding> | null = null;
 
-const BRANDING_CACHE_TTL = 30000; // 30 seconds for quick branding updates
-
 export async function fetchCachedBranding(): Promise<SiteBranding> {
   const now = Date.now();
-  if (brandingCacheItem && now - brandingCacheItem.timestamp < BRANDING_CACHE_TTL) {
+  if (brandingCacheItem && now - brandingCacheItem.timestamp < 3000) {
     return brandingCacheItem.data;
   }
   if (pendingBrandingPromise) return pendingBrandingPromise;
 
   pendingBrandingPromise = (async () => {
     try {
-      const r = await fetch('/api/branding');
+      const r = await fetch(`/api/branding?_t=${Date.now()}`, { cache: 'no-store' });
       if (r.ok) {
         const data = await r.json();
         if (data && data.siteName) {

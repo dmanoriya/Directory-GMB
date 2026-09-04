@@ -66,13 +66,13 @@ export default function Header({ branding: initialBranding }: HeaderProps) {
       fetchCachedBusinesses(),
       fetchCachedCategories(),
       fetchCachedCities(),
-      !initialBranding ? fetchCachedBranding() : Promise.resolve(null)
+      fetchCachedBranding()
     ]).then(([biz, cats, cits, brand]) => {
       if (!active) return;
       if (biz) setAllBusinesses(biz);
       if (cats) setDynamicCategories(cats);
       if (cits) setDynamicCities(cits);
-      if (brand && !initialBranding) setBranding(brand);
+      if (brand) setBranding(brand);
     }).catch(() => {});
 
     return () => { active = false; };

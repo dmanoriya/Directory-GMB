@@ -62,12 +62,12 @@ export default function Footer({ branding: initialBranding }: FooterProps = {}) 
     Promise.all([
       fetchCachedCategories(),
       fetchCachedCities(),
-      !initialBranding ? fetchCachedBranding() : Promise.resolve(null)
+      fetchCachedBranding()
     ]).then(([cats, cits, brand]) => {
       if (!active) return;
       if (cats) setCategories(cats);
       if (cits) setCities(cits);
-      if (brand && !initialBranding) setBranding(brand);
+      if (brand) setBranding(brand);
     }).catch(() => {});
 
     return () => { active = false; };

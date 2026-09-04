@@ -27,6 +27,14 @@ const nextConfig = {
         protocol: 'https',
         hostname: '*.hostingersite.com',
       },
+      {
+        protocol: 'http',
+        hostname: 'gmb.local',
+      },
+      {
+        protocol: 'http',
+        hostname: '*.local',
+      },
     ],
   },
   turbopack: {},

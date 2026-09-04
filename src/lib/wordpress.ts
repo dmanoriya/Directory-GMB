@@ -15,23 +15,22 @@ export function getWpApiUrl(): string {
   }
 
   // 2. Check environment variables
-  let envUrl = (
+  const envUrl = (
     process.env.NEXT_PUBLIC_WORDPRESS_API_URL ||
     process.env.WORDPRESS_API_URL ||
     ''
   ).trim().replace(/\/$/, '');
 
-  // If envUrl is set and is a valid remote URL (not localhost/.local), use it!
-  if (envUrl && !envUrl.includes('localhost') && !envUrl.includes('.local') && !envUrl.includes('127.0.0.1')) {
+  if (envUrl) {
     return envUrl;
   }
 
-  // 3. If running in browser on localhost, allow gmb.local for local development
-  if (typeof window !== 'undefined') {
-    const host = window.location.hostname;
-    if (host === 'localhost' || host === '127.0.0.1' || host.endsWith('.local')) {
-      if (envUrl) return envUrl;
-    }
+  // 3. If running locally (development or localhost hostname), default to local WordPress
+  if (
+    process.env.NODE_ENV === 'development' ||
+    (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' || window.location.hostname.endsWith('.local')))
+  ) {
+    return 'http://gmb.local';
   }
 
   // 4. Default Live WordPress Backend Fallback
@@ -80,7 +79,6 @@ export async function testWpConnection(url?: string): Promise<{ success: boolean
 let listingsCache: { data: BusinessListing[]; timestamp: number } | null = null;
 let categoriesCache: { data: Category[]; timestamp: number } | null = null;
 let citiesCache: { data: LocationCity[]; timestamp: number } | null = null;
-let brandingCache: { data: SiteBranding; timestamp: number } | null = null;
 
 const CACHE_TTL_MS = 10000; // 10 seconds cache for rapid updates
 
@@ -88,18 +86,13 @@ export function clearListingsCache(): void {
   listingsCache = null;
   categoriesCache = null;
   citiesCache = null;
-  brandingCache = null;
 }
 
 /**
  * Fetch dynamic Site Branding (Logo, Favicon, Brand Title, SEO) from WordPress.
+ * Zero-delay: always fetches live with cache-busting headers.
  */
 export async function getSiteBranding(): Promise<SiteBranding> {
-  const now = Date.now();
-  if (brandingCache && (now - brandingCache.timestamp < CACHE_TTL_MS)) {
-    return brandingCache.data;
-  }
-
   const defaultBranding: SiteBranding = {
     siteName: 'San Diego Business Circle',
     tagline: 'Verified Local Business Directory & Marketplace',
@@ -113,19 +106,21 @@ export async function getSiteBranding(): Promise<SiteBranding> {
   const apiUrl = getWpApiUrl();
   if (!apiUrl) return defaultBranding;
 
+  const now = Date.now();
   try {
     const res = await fetch(`${apiUrl}/wp-json/locable/v1/branding?_t=${now}`, {
       cache: 'no-store',
       headers: {
         'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) LocableNextJS/1.0',
-        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Cache-Control': 'no-cache, no-store, must-revalidate, max-age=0, s-maxage=0',
+        'Pragma': 'no-cache',
       },
-      signal: AbortSignal.timeout(5000),
+      signal: AbortSignal.timeout(4000),
     });
 
     if (res.ok) {
       const data = await res.json();
-      const resolved: SiteBranding = {
+      return {
         siteName: data.siteName || defaultBranding.siteName,
         tagline: data.tagline || defaultBranding.tagline,
         logo: data.logo || '',
@@ -134,8 +129,6 @@ export async function getSiteBranding(): Promise<SiteBranding> {
         metaTitle: data.metaTitle || defaultBranding.metaTitle,
         metaDescription: data.metaDescription || defaultBranding.metaDescription,
       };
-      brandingCache = { data: resolved, timestamp: now };
-      return resolved;
     }
   } catch (e) {
     // Return default fallback
