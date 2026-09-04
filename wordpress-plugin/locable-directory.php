@@ -409,34 +409,167 @@ function locable_maps_settings_page() {
         update_option('locable_google_maps_api_key',   sanitize_text_field($_POST['locable_google_maps_api_key'] ?? ''));
         update_option('locable_grid_fallback_image',   esc_url_raw($_POST['locable_grid_fallback_image'] ?? ''));
         update_option('locable_detail_fallback_image', esc_url_raw($_POST['locable_detail_fallback_image'] ?? ''));
-        $message = "<div class='notice notice-success'><p><strong>Locable Settings &amp; Fallback Images updated successfully!</strong></p></div>";
+
+        // Brand & Logo & Favicon Options
+        update_option('locable_site_name',             sanitize_text_field($_POST['locable_site_name'] ?? ''));
+        update_option('locable_site_tagline',          sanitize_text_field($_POST['locable_site_tagline'] ?? ''));
+        update_option('locable_site_logo',             esc_url_raw($_POST['locable_site_logo'] ?? ''));
+        update_option('locable_site_logo_dark',        esc_url_raw($_POST['locable_site_logo_dark'] ?? ''));
+        update_option('locable_site_favicon',          esc_url_raw($_POST['locable_site_favicon'] ?? ''));
+        update_option('locable_meta_description',      sanitize_textarea_field($_POST['locable_meta_description'] ?? ''));
+
+        $message = "<div class='notice notice-success is-dismissible'><p><strong>🎉 Settings, Logo, Favicon &amp; SEO updated and synced with Next.js frontend!</strong></p></div>";
     }
 
-    $current_key    = get_option('locable_google_maps_api_key', '');
-    $grid_fallback  = get_option('locable_grid_fallback_image', 'https://images.unsplash.com/photo-1570172619644-dfd03ed5d881?w=600&h=400&fit=crop&q=80');
+    $current_key     = get_option('locable_google_maps_api_key', '');
+    $grid_fallback   = get_option('locable_grid_fallback_image', 'https://images.unsplash.com/photo-1570172619644-dfd03ed5d881?w=600&h=400&fit=crop&q=80');
     $detail_fallback = get_option('locable_detail_fallback_image', 'https://images.unsplash.com/photo-1629909613654-28e377c37b09?w=1200&h=600&fit=crop&q=80');
+
+    $site_name       = get_option('locable_site_name', get_bloginfo('name') ?: 'San Diego Business Circle');
+    $site_tagline    = get_option('locable_site_tagline', get_bloginfo('description') ?: 'Verified Local Business Directory & Marketplace');
+    $site_logo       = get_option('locable_site_logo', '');
+    $site_logo_dark  = get_option('locable_site_logo_dark', '');
+    $site_favicon    = get_option('locable_site_favicon', get_site_icon_url(512) ?: '');
+    $meta_desc       = get_option('locable_meta_description', 'Discover verified local businesses, medical spas, contractors, and services in San Diego.');
+
+    // Ensure WP Media uploader is enqueued
+    wp_enqueue_media();
     ?>
     <div class="wrap">
-        <h1>Locable Directory - Configuration &amp; Image Fallback Settings</h1>
-        <p>Configure your Google Maps API key and default placeholder fallback images.</p>
+        <h1 style="display:flex;align-items:center;gap:10px;">
+            <span>🎨</span> Locable Directory – Brand Logo, Favicon &amp; Settings
+        </h1>
+        <p style="color:#555;font-size:14px;">
+            Manage your Site Logo, Favicon, Brand Identity, and Fallback Images. All changes update instantly on the Next.js frontend and Google SEO metadata.
+        </p>
         <?php echo $message; ?>
-        <form method="post" style="background:#fff;border:1px solid #ccd0d4;padding:20px;border-radius:8px;max-width:650px;margin-top:20px;">
+
+        <form method="post" style="background:#fff;border:1px solid #ccd0d4;padding:25px;border-radius:10px;max-width:720px;margin-top:20px;box-shadow:0 1px 3px rgba(0,0,0,0.04);">
             <?php wp_nonce_field('locable_save_settings'); ?>
-            <h2 style="margin-top:0;">1. Google Maps API Key</h2>
-            <input type="text" name="locable_google_maps_api_key" value="<?php echo esc_attr($current_key); ?>" style="width:100%;padding:8px;font-family:monospace;margin-bottom:20px;" />
 
-            <h2>2. Fallback Placeholder Images</h2>
-            <p style="font-size:13px;color:#666;">Used whenever a business listing lacks a thumbnail.</p>
+            <!-- Section 1: Logo & Favicon -->
+            <div style="border-bottom:1px solid #e5e7eb;padding-bottom:20px;margin-bottom:25px;">
+                <h2 style="margin-top:0;color:#111;font-size:1.25rem;">1. Brand Logo &amp; Favicon</h2>
+                <p style="font-size:13px;color:#666;">Upload your logo and favicon via WordPress Media Library or enter image URLs.</p>
 
-            <label style="font-weight:bold;display:block;margin-bottom:6px;">Grid Card Fallback URL:</label>
-            <input type="url" name="locable_grid_fallback_image" value="<?php echo esc_url($grid_fallback); ?>" style="width:100%;padding:8px;margin-bottom:15px;" />
+                <!-- Primary Logo (Header) -->
+                <div style="margin-bottom:20px;">
+                    <label style="font-weight:600;display:block;margin-bottom:6px;color:#1f2937;">Primary Site Logo (Header):</label>
+                    <div style="display:flex;gap:10px;align-items:center;margin-bottom:8px;">
+                        <input type="url" id="locable_site_logo" name="locable_site_logo" value="<?php echo esc_url($site_logo); ?>" placeholder="https://.../logo.png" style="flex:1;padding:8px;border-radius:6px;border:1px solid #d1d5db;" />
+                        <button type="button" class="button locable-upload-btn" data-target="#locable_site_logo" data-preview="#preview_site_logo" style="padding:4px 12px;display:flex;align-items:center;gap:4px;">
+                            📁 Choose / Upload
+                        </button>
+                    </div>
+                    <div id="preview_site_logo" style="padding:10px;background:#f9fafb;border:1px dashed #d1d5db;border-radius:8px;display:<?php echo $site_logo ? 'inline-block' : 'none'; ?>;max-height:80px;">
+                        <?php if ($site_logo): ?>
+                            <img src="<?php echo esc_url($site_logo); ?>" alt="Logo Preview" style="max-height:60px;max-width:240px;object-fit:contain;display:block;" />
+                        <?php endif; ?>
+                    </div>
+                </div>
 
-            <label style="font-weight:bold;display:block;margin-bottom:6px;">Detail Cover Fallback URL:</label>
-            <input type="url" name="locable_detail_fallback_image" value="<?php echo esc_url($detail_fallback); ?>" style="width:100%;padding:8px;margin-bottom:20px;" />
+                <!-- Dark / Footer Logo (Optional) -->
+                <div style="margin-bottom:20px;">
+                    <label style="font-weight:600;display:block;margin-bottom:6px;color:#1f2937;">Footer / Dark Background Logo (Optional):</label>
+                    <div style="display:flex;gap:10px;align-items:center;margin-bottom:8px;">
+                        <input type="url" id="locable_site_logo_dark" name="locable_site_logo_dark" value="<?php echo esc_url($site_logo_dark); ?>" placeholder="https://.../logo-white.png" style="flex:1;padding:8px;border-radius:6px;border:1px solid #d1d5db;" />
+                        <button type="button" class="button locable-upload-btn" data-target="#locable_site_logo_dark" data-preview="#preview_site_logo_dark" style="padding:4px 12px;display:flex;align-items:center;gap:4px;">
+                            📁 Choose / Upload
+                        </button>
+                    </div>
+                    <div id="preview_site_logo_dark" style="padding:10px;background:#18181b;border:1px dashed #3f3f46;border-radius:8px;display:<?php echo $site_logo_dark ? 'inline-block' : 'none'; ?>;max-height:80px;">
+                        <?php if ($site_logo_dark): ?>
+                            <img src="<?php echo esc_url($site_logo_dark); ?>" alt="Footer Logo Preview" style="max-height:60px;max-width:240px;object-fit:contain;display:block;" />
+                        <?php endif; ?>
+                    </div>
+                </div>
 
-            <input type="submit" name="save_locable_settings" class="button button-primary" value="Save All Directory Settings" />
+                <!-- Favicon / Site Icon -->
+                <div style="margin-bottom:10px;">
+                    <label style="font-weight:600;display:block;margin-bottom:6px;color:#1f2937;">Site Favicon (.ico, .png, .svg):</label>
+                    <div style="display:flex;gap:10px;align-items:center;margin-bottom:8px;">
+                        <input type="url" id="locable_site_favicon" name="locable_site_favicon" value="<?php echo esc_url($site_favicon); ?>" placeholder="https://.../favicon.png" style="flex:1;padding:8px;border-radius:6px;border:1px solid #d1d5db;" />
+                        <button type="button" class="button locable-upload-btn" data-target="#locable_site_favicon" data-preview="#preview_site_favicon" style="padding:4px 12px;display:flex;align-items:center;gap:4px;">
+                            📁 Choose / Upload
+                        </button>
+                    </div>
+                    <div id="preview_site_favicon" style="padding:8px;background:#f9fafb;border:1px dashed #d1d5db;border-radius:8px;display:<?php echo $site_favicon ? 'inline-block' : 'none'; ?>;">
+                        <?php if ($site_favicon): ?>
+                            <img src="<?php echo esc_url($site_favicon); ?>" alt="Favicon Preview" style="width:36px;height:36px;object-fit:contain;display:block;" />
+                        <?php endif; ?>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Section 2: Brand Identity & SEO -->
+            <div style="border-bottom:1px solid #e5e7eb;padding-bottom:20px;margin-bottom:25px;">
+                <h2 style="margin-top:0;color:#111;font-size:1.25rem;">2. Brand Identity &amp; SEO Meta</h2>
+
+                <div style="margin-bottom:15px;">
+                    <label style="font-weight:600;display:block;margin-bottom:6px;color:#1f2937;">Website Brand Name:</label>
+                    <input type="text" name="locable_site_name" value="<?php echo esc_attr($site_name); ?>" placeholder="San Diego Business Circle" style="width:100%;padding:8px;border-radius:6px;border:1px solid #d1d5db;" />
+                </div>
+
+                <div style="margin-bottom:15px;">
+                    <label style="font-weight:600;display:block;margin-bottom:6px;color:#1f2937;">Tagline / Subtitle:</label>
+                    <input type="text" name="locable_site_tagline" value="<?php echo esc_attr($site_tagline); ?>" placeholder="Verified Local Business Directory &amp; Marketplace" style="width:100%;padding:8px;border-radius:6px;border:1px solid #d1d5db;" />
+                </div>
+
+                <div style="margin-bottom:10px;">
+                    <label style="font-weight:600;display:block;margin-bottom:6px;color:#1f2937;">Homepage SEO Meta Description:</label>
+                    <textarea name="locable_meta_description" rows="3" style="width:100%;padding:8px;border-radius:6px;border:1px solid #d1d5db;"><?php echo esc_textarea($meta_desc); ?></textarea>
+                </div>
+            </div>
+
+            <!-- Section 3: Technical & Fallbacks -->
+            <div style="margin-bottom:25px;">
+                <h2 style="margin-top:0;color:#111;font-size:1.25rem;">3. Maps Key &amp; Placeholder Fallbacks</h2>
+
+                <div style="margin-bottom:15px;">
+                    <label style="font-weight:600;display:block;margin-bottom:6px;color:#1f2937;">Google Maps JavaScript API Key:</label>
+                    <input type="text" name="locable_google_maps_api_key" value="<?php echo esc_attr($current_key); ?>" style="width:100%;padding:8px;font-family:monospace;border-radius:6px;border:1px solid #d1d5db;" />
+                </div>
+
+                <div style="margin-bottom:15px;">
+                    <label style="font-weight:600;display:block;margin-bottom:6px;color:#1f2937;">Grid Card Fallback Image URL:</label>
+                    <input type="url" name="locable_grid_fallback_image" value="<?php echo esc_url($grid_fallback); ?>" style="width:100%;padding:8px;border-radius:6px;border:1px solid #d1d5db;" />
+                </div>
+
+                <div style="margin-bottom:15px;">
+                    <label style="font-weight:600;display:block;margin-bottom:6px;color:#1f2937;">Detail Cover Fallback Image URL:</label>
+                    <input type="url" name="locable_detail_fallback_image" value="<?php echo esc_url($detail_fallback); ?>" style="width:100%;padding:8px;border-radius:6px;border:1px solid #d1d5db;" />
+                </div>
+            </div>
+
+            <input type="submit" name="save_locable_settings" class="button button-primary" style="padding:6px 24px;font-size:14px;font-weight:600;height:auto;" value="Save All Branding &amp; Settings" />
         </form>
     </div>
+
+    <!-- Media Uploader Script -->
+    <script>
+    jQuery(document).ready(function($) {
+        $('.locable-upload-btn').on('click', function(e) {
+            e.preventDefault();
+            var button = $(this);
+            var targetInput = $(button.data('target'));
+            var previewBox = $(button.data('preview'));
+
+            var customUploader = wp.media({
+                title: 'Select or Upload Logo / Favicon',
+                button: { text: 'Use this Image' },
+                multiple: false
+            });
+
+            customUploader.on('select', function() {
+                var attachment = customUploader.state().get('selection').first().toJSON();
+                targetInput.val(attachment.url);
+                previewBox.show().html('<img src="' + attachment.url + '" style="max-height:60px;max-width:240px;object-fit:contain;display:block;" />');
+            });
+
+            customUploader.open();
+        });
+    });
+    </script>
     <?php
 }
 
@@ -1487,6 +1620,12 @@ function locable_handle_quick_user_status() {
 add_action('rest_api_init', 'locable_register_public_rest_routes');
 
 function locable_register_public_rest_routes() {
+    register_rest_route('locable/v1', '/branding', array(
+        'methods'             => 'GET',
+        'callback'            => 'locable_rest_get_branding',
+        'permission_callback' => '__return_true',
+    ));
+
     register_rest_route('locable/v1', '/register-user', array(
         'methods'             => 'POST',
         'callback'            => 'locable_rest_register_user',
@@ -1540,6 +1679,40 @@ function locable_register_public_rest_routes() {
         'callback'            => 'locable_rest_get_user_status',
         'permission_callback' => '__return_true',
     ));
+}
+
+function locable_rest_get_branding() {
+    $site_name    = get_option('locable_site_name', get_bloginfo('name') ?: 'San Diego Business Circle');
+    $site_tagline = get_option('locable_site_tagline', get_bloginfo('description') ?: 'Verified Local Business Directory & Marketplace');
+
+    $logo = get_option('locable_site_logo', '');
+    if (empty($logo)) {
+        $custom_logo_id = get_theme_mod('custom_logo');
+        if ($custom_logo_id) {
+            $logo = wp_get_attachment_image_url($custom_logo_id, 'full') ?: '';
+        }
+    }
+
+    $logo_dark = get_option('locable_site_logo_dark', '');
+    $favicon   = get_option('locable_site_favicon', get_site_icon_url(512) ?: '');
+    $meta_desc = get_option('locable_meta_description', 'Discover verified local businesses, medical spas, contractors, and services in San Diego.');
+
+    $data = array(
+        'siteName'        => $site_name,
+        'tagline'         => $site_tagline,
+        'logo'            => $logo,
+        'logoDark'        => $logo_dark,
+        'favicon'         => $favicon,
+        'metaTitle'       => $site_name . ' | ' . $site_tagline,
+        'metaDescription' => $meta_desc,
+    );
+
+    $response = new WP_REST_Response($data, 200);
+    $response->header('Cache-Control', 'no-cache, no-store, must-revalidate, max-age=0, s-maxage=0');
+    $response->header('Pragma', 'no-cache');
+    $response->header('Expires', '0');
+    $response->header('Access-Control-Allow-Origin', '*');
+    return $response;
 }
 
 function locable_rest_upload_media($request) {

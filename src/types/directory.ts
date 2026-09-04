@@ -136,3 +136,13 @@ export interface BlogPost {
   readTime: string;
   coverImage: string;
 }
+
+export interface SiteBranding {
+  siteName: string;
+  tagline?: string;
+  logo?: string;
+  logoDark?: string;
+  favicon?: string;
+  metaTitle?: string;
+  metaDescription?: string;
+}

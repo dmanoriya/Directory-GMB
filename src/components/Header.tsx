@@ -21,15 +21,20 @@ import {
   Star,
   Layers
 } from 'lucide-react';
-import { Category, LocationCity, BusinessListing } from '@/types/directory';
+import { Category, LocationCity, BusinessListing, SiteBranding } from '@/types/directory';
 import { useAuth } from '@/context/AuthContext';
-import { fetchCachedBusinesses, fetchCachedCategories, fetchCachedCities } from '@/lib/clientData';
+import { fetchCachedBusinesses, fetchCachedCategories, fetchCachedCities, fetchCachedBranding } from '@/lib/clientData';
 
 import { usePathname } from 'next/navigation';
 
-export default function Header() {
+interface HeaderProps {
+  branding?: SiteBranding;
+}
+
+export default function Header({ branding: initialBranding }: HeaderProps) {
   const pathname = usePathname();
   const { user, logout } = useAuth();
+  const [branding, setBranding] = useState<SiteBranding | null>(initialBranding || null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [megaMenuOpen, setMegaMenuOpen] = useState(false);
   const [searchModalOpen, setSearchModalOpen] = useState(false);
@@ -60,16 +65,18 @@ export default function Header() {
     Promise.all([
       fetchCachedBusinesses(),
       fetchCachedCategories(),
-      fetchCachedCities()
-    ]).then(([biz, cats, cits]) => {
+      fetchCachedCities(),
+      !initialBranding ? fetchCachedBranding() : Promise.resolve(null)
+    ]).then(([biz, cats, cits, brand]) => {
       if (!active) return;
       if (biz) setAllBusinesses(biz);
       if (cats) setDynamicCategories(cats);
       if (cits) setDynamicCities(cits);
+      if (brand && !initialBranding) setBranding(brand);
     }).catch(() => {});
 
     return () => { active = false; };
-  }, []);
+  }, [initialBranding]);
 
   // Live Auto-complete Suggestions for Quick Search Modal
   const modalSuggestions = useMemo(() => {
@@ -138,43 +145,64 @@ export default function Header() {
       <header className={`sticky-header ${isScrolled ? 'is-scrolled' : ''}`}>
         <div className="container" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: '72px' }}>
           
-          {/* LEFT: Simple & Sober Brand Logo: LocalNest */}
+          {/* LEFT: Dynamic Brand Logo from WordPress */}
           <Link href="/" style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', textDecoration: 'none' }}>
-            <div style={{
-              width: '38px',
-              height: '38px',
-              borderRadius: '10px',
-              background: '#111111',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: '#ffffff',
-              boxShadow: '0 4px 12px rgba(17, 17, 17, 0.15)',
-              position: 'relative',
-              flexShrink: 0
-            }}>
-              <Home size={20} color="#ffffff" />
-              <div style={{
-                position: 'absolute',
-                top: '-2px',
-                right: '-2px',
-                width: '8px',
-                height: '8px',
-                borderRadius: '50%',
-                background: '#FF5B3E',
-                border: '2px solid #ffffff'
-              }} />
-            </div>
-            <span style={{
-              fontFamily: 'var(--font-heading)',
-              fontSize: '1.4rem',
-              fontWeight: '700',
-              color: '#111111',
-              letterSpacing: '-0.03em',
-              whiteSpace: 'nowrap'
-            }}>
-              Local<span style={{ color: '#FF5B3E' }}>Nest.</span>
-            </span>
+            {branding?.logo ? (
+              <img
+                src={branding.logo}
+                alt={branding.siteName || 'San Diego Business Circle'}
+                style={{ maxHeight: '42px', maxWidth: '210px', objectFit: 'contain', display: 'block' }}
+              />
+            ) : (
+              <>
+                <div style={{
+                  width: '38px',
+                  height: '38px',
+                  borderRadius: '10px',
+                  background: '#111111',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: '#ffffff',
+                  boxShadow: '0 4px 12px rgba(17, 17, 17, 0.15)',
+                  position: 'relative',
+                  flexShrink: 0
+                }}>
+                  <Home size={20} color="#ffffff" />
+                  <div style={{
+                    position: 'absolute',
+                    top: '-2px',
+                    right: '-2px',
+                    width: '8px',
+                    height: '8px',
+                    borderRadius: '50%',
+                    background: '#FF5B3E',
+                    border: '2px solid #ffffff'
+                  }} />
+                </div>
+                <span style={{
+                  fontFamily: 'var(--font-heading)',
+                  fontSize: '1.35rem',
+                  fontWeight: '700',
+                  color: '#111111',
+                  letterSpacing: '-0.03em',
+                  whiteSpace: 'nowrap'
+                }}>
+                  {branding?.siteName ? (
+                    branding.siteName.includes(' ') ? (
+                      <>
+                        {branding.siteName.split(' ').slice(0, -1).join(' ')}{' '}
+                        <span style={{ color: '#FF5B3E' }}>{branding.siteName.split(' ').slice(-1)[0]}</span>
+                      </>
+                    ) : (
+                      <span>{branding.siteName}</span>
+                    )
+                  ) : (
+                    <>San Diego <span style={{ color: '#FF5B3E' }}>Business Circle</span></>
+                  )}
+                </span>
+              </>
+            )}
           </Link>
 
           {/* CENTER: Clean, Balanced Short Desktop Navigation */}
@@ -555,21 +583,43 @@ export default function Header() {
               flexShrink: 0
             }}>
               <Link href="/" onClick={() => setMobileMenuOpen(false)} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', textDecoration: 'none' }}>
-                <div style={{
-                  width: '32px',
-                  height: '32px',
-                  borderRadius: '8px',
-                  background: '#111111',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  color: '#ffffff'
-                }}>
-                  <Home size={16} color="#ffffff" />
-                </div>
-                <span style={{ fontFamily: 'var(--font-heading)', fontSize: '1.15rem', fontWeight: '700', color: '#111111' }}>
-                  Local<span style={{ color: '#FF5B3E' }}>Nest.</span>
-                </span>
+                {branding?.logo ? (
+                  <img
+                    src={branding.logo}
+                    alt={branding.siteName || 'San Diego Business Circle'}
+                    style={{ maxHeight: '34px', maxWidth: '170px', objectFit: 'contain', display: 'block' }}
+                  />
+                ) : (
+                  <>
+                    <div style={{
+                      width: '32px',
+                      height: '32px',
+                      borderRadius: '8px',
+                      background: '#111111',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      color: '#ffffff',
+                      flexShrink: 0
+                    }}>
+                      <Home size={16} color="#ffffff" />
+                    </div>
+                    <span style={{ fontFamily: 'var(--font-heading)', fontSize: '1.15rem', fontWeight: '700', color: '#111111' }}>
+                      {branding?.siteName ? (
+                        branding.siteName.includes(' ') ? (
+                          <>
+                            {branding.siteName.split(' ').slice(0, -1).join(' ')}{' '}
+                            <span style={{ color: '#FF5B3E' }}>{branding.siteName.split(' ').slice(-1)[0]}</span>
+                          </>
+                        ) : (
+                          <span>{branding.siteName}</span>
+                        )
+                      ) : (
+                        <>San Diego <span style={{ color: '#FF5B3E' }}>Business Circle</span></>
+                      )}
+                    </span>
+                  </>
+                )}
               </Link>
 
               <button

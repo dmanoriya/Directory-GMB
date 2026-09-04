@@ -1,6 +1,6 @@
 import { cache } from 'react';
 import { MOCK_CATEGORIES, MOCK_CITIES, MOCK_REVIEWS, MOCK_BLOG_POSTS } from '@/data/mockData';
-import { BusinessListing, BusinessReview, Category, LocationCity, BlogPost, LeadSubmission } from '@/types/directory';
+import { BusinessListing, BusinessReview, Category, LocationCity, BlogPost, LeadSubmission, SiteBranding } from '@/types/directory';
 
 /**
  * Get WordPress REST API base URL.
@@ -80,6 +80,7 @@ export async function testWpConnection(url?: string): Promise<{ success: boolean
 let listingsCache: { data: BusinessListing[]; timestamp: number } | null = null;
 let categoriesCache: { data: Category[]; timestamp: number } | null = null;
 let citiesCache: { data: LocationCity[]; timestamp: number } | null = null;
+let brandingCache: { data: SiteBranding; timestamp: number } | null = null;
 
 const CACHE_TTL_MS = 10000; // 10 seconds cache for rapid updates
 
@@ -87,6 +88,60 @@ export function clearListingsCache(): void {
   listingsCache = null;
   categoriesCache = null;
   citiesCache = null;
+  brandingCache = null;
+}
+
+/**
+ * Fetch dynamic Site Branding (Logo, Favicon, Brand Title, SEO) from WordPress.
+ */
+export async function getSiteBranding(): Promise<SiteBranding> {
+  const now = Date.now();
+  if (brandingCache && (now - brandingCache.timestamp < CACHE_TTL_MS)) {
+    return brandingCache.data;
+  }
+
+  const defaultBranding: SiteBranding = {
+    siteName: 'San Diego Business Circle',
+    tagline: 'Verified Local Business Directory & Marketplace',
+    logo: '',
+    logoDark: '',
+    favicon: '',
+    metaTitle: 'San Diego Business Circle | Verified Local Business Directory',
+    metaDescription: 'Discover verified local businesses, medical spas, contractors, and services in San Diego.',
+  };
+
+  const apiUrl = getWpApiUrl();
+  if (!apiUrl) return defaultBranding;
+
+  try {
+    const res = await fetch(`${apiUrl}/wp-json/locable/v1/branding?_t=${now}`, {
+      cache: 'no-store',
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) LocableNextJS/1.0',
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+      },
+      signal: AbortSignal.timeout(5000),
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      const resolved: SiteBranding = {
+        siteName: data.siteName || defaultBranding.siteName,
+        tagline: data.tagline || defaultBranding.tagline,
+        logo: data.logo || '',
+        logoDark: data.logoDark || '',
+        favicon: data.favicon || '',
+        metaTitle: data.metaTitle || defaultBranding.metaTitle,
+        metaDescription: data.metaDescription || defaultBranding.metaDescription,
+      };
+      brandingCache = { data: resolved, timestamp: now };
+      return resolved;
+    }
+  } catch (e) {
+    // Return default fallback
+  }
+
+  return defaultBranding;
 }
 
 /**

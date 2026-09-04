@@ -15,6 +15,18 @@ const nextConfig = {
         protocol: 'https',
         hostname: 'via.placeholder.com',
       },
+      {
+        protocol: 'https',
+        hostname: 'admin.sandiegobusinesscircle.com',
+      },
+      {
+        protocol: 'https',
+        hostname: 'sandiegobusinesscircle.com',
+      },
+      {
+        protocol: 'https',
+        hostname: '*.hostingersite.com',
+      },
     ],
   },
   turbopack: {},

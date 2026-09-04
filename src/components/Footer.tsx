@@ -12,8 +12,8 @@ import {
   CheckCircle2,
   Building2
 } from 'lucide-react';
-import { Category, LocationCity } from '@/types/directory';
-import { fetchCachedCategories, fetchCachedCities } from '@/lib/clientData';
+import { Category, LocationCity, SiteBranding } from '@/types/directory';
+import { fetchCachedCategories, fetchCachedCities, fetchCachedBranding } from '@/lib/clientData';
 
 const SocialIcons = {
   Facebook: () => (
@@ -38,8 +38,13 @@ const SocialIcons = {
   )
 };
 
-export default function Footer() {
+interface FooterProps {
+  branding?: SiteBranding;
+}
+
+export default function Footer({ branding: initialBranding }: FooterProps = {}) {
   const pathname = usePathname();
+  const [branding, setBranding] = useState<SiteBranding | undefined>(initialBranding);
   const [categories, setCategories] = useState<Category[]>([]);
   const [cities, setCities] = useState<LocationCity[]>([]);
 
@@ -47,18 +52,26 @@ export default function Footer() {
   const [subscribed, setSubscribed] = useState(false);
 
   useEffect(() => {
+    if (initialBranding) {
+      setBranding(initialBranding);
+    }
+  }, [initialBranding]);
+
+  useEffect(() => {
     let active = true;
     Promise.all([
       fetchCachedCategories(),
-      fetchCachedCities()
-    ]).then(([cats, cits]) => {
+      fetchCachedCities(),
+      !initialBranding ? fetchCachedBranding() : Promise.resolve(null)
+    ]).then(([cats, cits, brand]) => {
       if (!active) return;
       if (cats) setCategories(cats);
       if (cits) setCities(cits);
+      if (brand && !initialBranding) setBranding(brand);
     }).catch(() => {});
 
     return () => { active = false; };
-  }, []);
+  }, [initialBranding]);
 
   const popularCategories = React.useMemo(() => {
     return [...categories].sort((a, b) => (b.count || 0) - (a.count || 0) || a.name.localeCompare(b.name));
@@ -197,27 +210,48 @@ export default function Footer() {
             {/* BRAND & IDENTITY COLUMN */}
             <div style={{ gridColumn: 'span 2' }}>
               <Link href="/" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.65rem', marginBottom: '1.25rem', textDecoration: 'none' }}>
-                <div style={{
-                  width: '42px',
-                  height: '42px',
-                  borderRadius: '12px',
-                  background: '#FF5B3E',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  color: '#ffffff',
-                  boxShadow: '0 6px 18px rgba(255, 91, 62, 0.35)',
-                  flexShrink: 0
-                }}>
-                  <Home size={22} color="#ffffff" />
-                </div>
-                <span style={{ fontFamily: 'var(--font-heading)', fontSize: '1.5rem', fontWeight: '800', color: '#ffffff', letterSpacing: '-0.03em' }}>
-                  Local<span style={{ color: '#FF5B3E' }}>Nest.</span>
-                </span>
+                {(branding?.logoDark || branding?.logo) ? (
+                  <img
+                    src={branding.logoDark || branding.logo}
+                    alt={branding.siteName || 'San Diego Business Circle'}
+                    style={{ maxHeight: '46px', maxWidth: '220px', objectFit: 'contain', display: 'block' }}
+                  />
+                ) : (
+                  <>
+                    <div style={{
+                      width: '42px',
+                      height: '42px',
+                      borderRadius: '12px',
+                      background: '#FF5B3E',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      color: '#ffffff',
+                      boxShadow: '0 6px 18px rgba(255, 91, 62, 0.35)',
+                      flexShrink: 0
+                    }}>
+                      <Home size={22} color="#ffffff" />
+                    </div>
+                    <span style={{ fontFamily: 'var(--font-heading)', fontSize: '1.5rem', fontWeight: '800', color: '#ffffff', letterSpacing: '-0.03em' }}>
+                      {branding?.siteName ? (
+                        branding.siteName.includes(' ') ? (
+                          <>
+                            {branding.siteName.split(' ').slice(0, -1).join(' ')}{' '}
+                            <span style={{ color: '#FF5B3E' }}>{branding.siteName.split(' ').slice(-1)[0]}</span>
+                          </>
+                        ) : (
+                          <span>{branding.siteName}</span>
+                        )
+                      ) : (
+                        <>San Diego <span style={{ color: '#FF5B3E' }}>Business Circle</span></>
+                      )}
+                    </span>
+                  </>
+                )}
               </Link>
 
               <p style={{ fontSize: '0.9rem', color: '#A1A1AA', lineHeight: '1.65', marginBottom: '1.5rem', maxWidth: '380px' }}>
-                The trusted business directory connecting homeowners, patients, and residents with verified contractors, medical spas, plumbers, and local specialists across San Diego.
+                {branding?.metaDescription || 'The trusted business directory connecting homeowners, patients, and residents with verified contractors, medical spas, plumbers, and local specialists across San Diego.'}
               </p>
 
               {/* Trust Badge */}
@@ -398,7 +432,7 @@ export default function Footer() {
             color: '#71717A'
           }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
-              <span>© {new Date().getFullYear()} LocalNest Inc. All rights reserved.</span>
+              <span>© {new Date().getFullYear()} {branding?.siteName || 'San Diego Business Circle'}. All rights reserved.</span>
               <span style={{ color: '#27272A' }}>|</span>
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', color: '#A1A1AA' }}>
                 <MapPin size={14} color="#FF5B3E" /> San Diego County, CA

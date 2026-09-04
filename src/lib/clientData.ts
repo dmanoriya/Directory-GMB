@@ -1,4 +1,4 @@
-import { BusinessListing, Category, LocationCity, BlogPost } from '@/types/directory';
+import { BusinessListing, Category, LocationCity, BlogPost, SiteBranding } from '@/types/directory';
 import { getBusinesses, getCategories, getCities, getBlogPosts } from '@/lib/wordpress';
 
 interface CacheItem<T> {
@@ -157,4 +157,42 @@ export async function fetchCachedPosts(): Promise<BlogPost[]> {
   });
 
   return pendingPostPromise;
+}
+
+let brandingCacheItem: CacheItem<SiteBranding> | null = null;
+let pendingBrandingPromise: Promise<SiteBranding> | null = null;
+
+const BRANDING_CACHE_TTL = 30000; // 30 seconds for quick branding updates
+
+export async function fetchCachedBranding(): Promise<SiteBranding> {
+  const now = Date.now();
+  if (brandingCacheItem && now - brandingCacheItem.timestamp < BRANDING_CACHE_TTL) {
+    return brandingCacheItem.data;
+  }
+  if (pendingBrandingPromise) return pendingBrandingPromise;
+
+  pendingBrandingPromise = (async () => {
+    try {
+      const r = await fetch('/api/branding');
+      if (r.ok) {
+        const data = await r.json();
+        if (data && data.siteName) {
+          brandingCacheItem = { data, timestamp: Date.now() };
+          return data;
+        }
+      }
+    } catch (e) {}
+
+    return brandingCacheItem?.data || {
+      siteName: 'San Diego Business Circle',
+      tagline: 'Verified Local Business Directory & Marketplace',
+      logo: '',
+      logoDark: '',
+      favicon: '',
+    };
+  })().finally(() => {
+    pendingBrandingPromise = null;
+  });
+
+  return pendingBrandingPromise;
 }
