@@ -12,6 +12,10 @@ export function getWpApiUrl(): string {
     if (localSaved && localSaved.trim()) {
       return localSaved.trim().replace(/\/$/, '');
     }
+    const host = window.location.hostname;
+    if (host.includes('sandiegobusinesscircle.com') || host.includes('hostingersite.com')) {
+      return 'https://admin.sandiegobusinesscircle.com';
+    }
   }
 
   // 2. Check environment variables
@@ -21,20 +25,20 @@ export function getWpApiUrl(): string {
     ''
   ).trim().replace(/\/$/, '');
 
+  // In production (e.g. Hostinger), always target the live production WordPress URL
+  if (process.env.NODE_ENV === 'production') {
+    if (envUrl && !envUrl.includes('.local') && !envUrl.includes('localhost') && !envUrl.includes('127.0.0.1')) {
+      return envUrl;
+    }
+    return 'https://admin.sandiegobusinesscircle.com';
+  }
+
+  // In development, use configured envUrl or default to local WordPress
   if (envUrl) {
     return envUrl;
   }
 
-  // 3. If running locally (development or localhost hostname), default to local WordPress
-  if (
-    process.env.NODE_ENV === 'development' ||
-    (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' || window.location.hostname.endsWith('.local')))
-  ) {
-    return 'http://gmb.local';
-  }
-
-  // 4. Default Live WordPress Backend Fallback
-  return 'https://admin.sandiegobusinesscircle.com';
+  return 'http://gmb.local';
 }
 
 /**

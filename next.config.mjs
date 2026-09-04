@@ -38,7 +38,10 @@ const nextConfig = {
     ],
   },
   turbopack: {},
-  webpack: (config) => {
+  webpack: (config, { dev }) => {
+    if (!dev) {
+      config.cache = false;
+    }
     return config;
   },
 };

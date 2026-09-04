@@ -33,7 +33,8 @@ import {
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { SuggestedEdit } from '@/types/auth';
-import { BusinessListing } from '@/types/directory';
+import { BusinessListing, SiteBranding } from '@/types/directory';
+import { fetchCachedBranding } from '@/lib/clientData';
 import AddBusinessModal from '@/components/AddBusinessModal';
 import SuggestEditsModal from '@/components/SuggestEditsModal';
 import ChangePasswordModal from '@/components/ChangePasswordModal';
@@ -57,9 +58,18 @@ interface UserListingItem {
 export default function DashboardPage() {
   const { user, loading, logout, login } = useAuth();
   const [activeTab, setActiveTab] = useState<'overview' | 'listings' | 'edits' | 'settings'>('overview');
+  const [branding, setBranding] = useState<SiteBranding | null>(null);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isDrawerClosing, setIsDrawerClosing] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    fetchCachedBranding().then((b) => {
+      if (active && b) setBranding(b);
+    }).catch(() => {});
+    return () => { active = false; };
+  }, []);
 
   const closeMobileMenu = () => {
     if (isDrawerClosing) return;
@@ -196,22 +206,57 @@ export default function DashboardPage() {
         }}>
           {!isSidebarCollapsed ? (
             <Link href="/" style={{ textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
-              <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: '#0f172a', color: '#ffffff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: '900', fontSize: '1.1rem' }}>
-                L
-              </div>
-              <div>
-                <div style={{ fontFamily: 'var(--font-heading)', fontWeight: '800', fontSize: '1.05rem', color: '#0f172a', lineHeight: '1.1' }}>
-                  Locable
+              {branding?.logo ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <img
+                    src={branding.logo}
+                    alt={branding.siteName || 'Portal'}
+                    style={{ maxHeight: '34px', maxWidth: '145px', objectFit: 'contain', display: 'block' }}
+                  />
+                  <span style={{
+                    fontSize: '0.625rem',
+                    fontWeight: '800',
+                    background: '#FFF0ED',
+                    color: '#FF5B3E',
+                    padding: '0.15rem 0.45rem',
+                    borderRadius: '6px',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.05em',
+                    border: '1px solid #FFD8D0'
+                  }}>
+                    CRM
+                  </span>
                 </div>
-                <div style={{ fontSize: '0.675rem', fontWeight: '700', color: '#FF5B3E', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                  CRM Portal
-                </div>
-              </div>
+              ) : (
+                <>
+                  <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: '#0f172a', color: '#ffffff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: '900', fontSize: '1.1rem' }}>
+                    {branding?.siteName ? branding.siteName.charAt(0).toUpperCase() : 'S'}
+                  </div>
+                  <div>
+                    <div style={{ fontFamily: 'var(--font-heading)', fontWeight: '800', fontSize: '1.05rem', color: '#0f172a', lineHeight: '1.1' }}>
+                      {branding?.siteName || 'San Diego'}
+                    </div>
+                    <div style={{ fontSize: '0.675rem', fontWeight: '700', color: '#FF5B3E', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                      CRM Portal
+                    </div>
+                  </div>
+                </>
+              )}
             </Link>
           ) : (
-            <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: '#0f172a', color: '#ffffff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: '900', fontSize: '1.1rem' }}>
-              L
-            </div>
+            <Link href="/" style={{ textDecoration: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              {branding?.favicon ? (
+                <img
+                  src={branding.favicon}
+                  alt={branding.siteName || 'Portal'}
+                  style={{ width: '32px', height: '32px', objectFit: 'contain', borderRadius: '8px', display: 'block' }}
+                />
+              ) : (
+                <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: '#0f172a', color: '#ffffff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: '900', fontSize: '1.1rem' }}>
+                  {branding?.siteName ? branding.siteName.charAt(0).toUpperCase() : 'S'}
+                </div>
+              )}
+            </Link>
           )}
 
           {/* Collapse/Expand Toggle Button */}
@@ -386,17 +431,42 @@ export default function DashboardPage() {
             {/* Mobile Header */}
             <div style={{ padding: '1.25rem 1.5rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid #f1f5f9' }}>
               <Link href="/" onClick={closeMobileMenu} style={{ textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
-                <div style={{ width: '34px', height: '34px', borderRadius: '10px', background: '#0f172a', color: '#ffffff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: '900', fontSize: '1rem' }}>
-                  L
-                </div>
-                <div>
-                  <div style={{ fontFamily: 'var(--font-heading)', fontWeight: '800', fontSize: '1.05rem', color: '#0f172a', lineHeight: '1.1' }}>
-                    Locable
+                {branding?.logo ? (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <img
+                      src={branding.logo}
+                      alt={branding.siteName || 'Portal'}
+                      style={{ maxHeight: '32px', maxWidth: '140px', objectFit: 'contain', display: 'block' }}
+                    />
+                    <span style={{
+                      fontSize: '0.625rem',
+                      fontWeight: '800',
+                      background: '#FFF0ED',
+                      color: '#FF5B3E',
+                      padding: '0.15rem 0.45rem',
+                      borderRadius: '6px',
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.05em',
+                      border: '1px solid #FFD8D0'
+                    }}>
+                      CRM
+                    </span>
                   </div>
-                  <div style={{ fontSize: '0.65rem', fontWeight: '700', color: '#FF5B3E', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                    CRM Portal
-                  </div>
-                </div>
+                ) : (
+                  <>
+                    <div style={{ width: '34px', height: '34px', borderRadius: '10px', background: '#0f172a', color: '#ffffff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: '900', fontSize: '1rem' }}>
+                      {branding?.siteName ? branding.siteName.charAt(0).toUpperCase() : 'S'}
+                    </div>
+                    <div>
+                      <div style={{ fontFamily: 'var(--font-heading)', fontWeight: '800', fontSize: '1.05rem', color: '#0f172a', lineHeight: '1.1' }}>
+                        {branding?.siteName || 'San Diego'}
+                      </div>
+                      <div style={{ fontSize: '0.65rem', fontWeight: '700', color: '#FF5B3E', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                        CRM Portal
+                      </div>
+                    </div>
+                  </>
+                )}
               </Link>
               <button onClick={closeMobileMenu} style={{ background: '#f1f5f9', border: 'none', padding: '0.4rem', borderRadius: '8px', cursor: 'pointer' }}>
                 <X size={20} color="#0f172a" />
