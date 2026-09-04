@@ -107,6 +107,10 @@ export async function getSiteBranding(): Promise<SiteBranding> {
     favicon: '',
     metaTitle: 'San Diego Business Circle | Verified Local Business Directory',
     metaDescription: 'Discover verified local businesses, medical spas, contractors, and services in San Diego.',
+    heroImage1: '/images/hero_medical_spa.jpg',
+    heroImage2: '/images/hero_contractor_pro.jpg',
+    heroImage3: '/images/hero_storefront.jpg',
+    heroBadgeText: 'VERIFIED LOCAL BUSINESS DIRECTORY •',
   };
 
   const apiUrl = getWpApiUrl();
@@ -134,6 +138,10 @@ export async function getSiteBranding(): Promise<SiteBranding> {
         favicon: data.favicon || '',
         metaTitle: data.metaTitle || defaultBranding.metaTitle,
         metaDescription: data.metaDescription || defaultBranding.metaDescription,
+        heroImage1: data.heroImage1 || defaultBranding.heroImage1,
+        heroImage2: data.heroImage2 || defaultBranding.heroImage2,
+        heroImage3: data.heroImage3 || defaultBranding.heroImage3,
+        heroBadgeText: data.heroBadgeText || defaultBranding.heroBadgeText,
       };
     }
   } catch (e) {

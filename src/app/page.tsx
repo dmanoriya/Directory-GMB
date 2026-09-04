@@ -33,9 +33,9 @@ import {
   Briefcase,
   Award
 } from 'lucide-react';
-import { Category, LocationCity, BusinessListing, BlogPost } from '@/types/directory';
+import { Category, LocationCity, BusinessListing, BlogPost, SiteBranding } from '@/types/directory';
 import { MOCK_CATEGORIES, MOCK_CITIES, MOCK_BUSINESSES, MOCK_BLOG_POSTS } from '@/data/mockData';
-import { fetchCachedBusinesses, fetchCachedCategories, fetchCachedCities, fetchCachedPosts } from '@/lib/clientData';
+import { fetchCachedBusinesses, fetchCachedCategories, fetchCachedCities, fetchCachedPosts, fetchCachedBranding } from '@/lib/clientData';
 
 // Category Dynamic Icon & Soft Color Palette Resolver (Zero Yellow Overload)
 const getCategoryIconAndColor = (name: string, iconKey?: string) => {
@@ -246,6 +246,7 @@ export default function HomePage() {
 
   const [auditModalOpen, setAuditModalOpen] = useState(false);
   const [dataLoading, setDataLoading] = useState(true);
+  const [branding, setBranding] = useState<SiteBranding | null>(null);
   const [allBusinesses, setAllBusinesses] = useState<BusinessListing[]>([]);
   const [dynamicCategories, setDynamicCategories] = useState<Category[]>([]);
   const [dynamicCities, setDynamicCities] = useState<LocationCity[]>([]);
@@ -260,13 +261,15 @@ export default function HomePage() {
       fetchCachedBusinesses(),
       fetchCachedCategories(),
       fetchCachedCities(),
-      fetchCachedPosts()
-    ]).then(([biz, cats, cits, posts]) => {
+      fetchCachedPosts(),
+      fetchCachedBranding()
+    ]).then(([biz, cats, cits, posts, brand]) => {
       if (!active) return;
       if (Array.isArray(biz) && biz.length > 0) setAllBusinesses(biz);
       if (Array.isArray(cats) && cats.length > 0) setDynamicCategories(cats);
       if (Array.isArray(cits) && cits.length > 0) setDynamicCities(cits);
       if (Array.isArray(posts) && posts.length > 0) setDynamicPosts(posts);
+      if (brand) setBranding(brand);
       setDataLoading(false);
     }).catch(() => {
       if (active) setDataLoading(false);
@@ -741,7 +744,7 @@ export default function HomePage() {
                   />
                   <text fill="#ffffff" fontSize="7.8" fontWeight="800" letterSpacing="1.9">
                     <textPath href="#circlePath">
-                      VERIFIED LOCAL BUSINESS DIRECTORY •
+                      {branding?.heroBadgeText || 'VERIFIED LOCAL BUSINESS DIRECTORY •'}
                     </textPath>
                   </text>
                 </svg>
@@ -772,7 +775,7 @@ export default function HomePage() {
                     background: '#ffffff'
                   }}>
                     <img
-                      src="/images/hero_medical_spa.jpg"
+                      src={branding?.heroImage1 || "/images/hero_medical_spa.jpg"}
                       alt="Modern Luxury Medical Spa Interior"
                       style={{
                         width: '100%',
@@ -794,7 +797,7 @@ export default function HomePage() {
                     background: '#ffffff'
                   }}>
                     <img
-                      src="/images/hero_contractor_pro.jpg"
+                      src={branding?.heroImage2 || "/images/hero_contractor_pro.jpg"}
                       alt="Licensed Trade Contractor & Service Specialist"
                       style={{
                         width: '100%',
@@ -818,7 +821,7 @@ export default function HomePage() {
                   background: '#ffffff'
                 }}>
                   <img
-                    src="/images/hero_storefront.jpg"
+                    src={branding?.heroImage3 || "/images/hero_storefront.jpg"}
                     alt="Luxury Local Business Storefront"
                     style={{
                       width: '100%',

@@ -418,7 +418,13 @@ function locable_maps_settings_page() {
         update_option('locable_site_favicon',          esc_url_raw($_POST['locable_site_favicon'] ?? ''));
         update_option('locable_meta_description',      sanitize_textarea_field($_POST['locable_meta_description'] ?? ''));
 
-        $message = "<div class='notice notice-success is-dismissible'><p><strong>🎉 Settings, Logo, Favicon &amp; SEO updated and synced with Next.js frontend!</strong></p></div>";
+        // Homepage Hero Collage & Badge Options
+        update_option('locable_hero_image_1',          esc_url_raw($_POST['locable_hero_image_1'] ?? ''));
+        update_option('locable_hero_image_2',          esc_url_raw($_POST['locable_hero_image_2'] ?? ''));
+        update_option('locable_hero_image_3',          esc_url_raw($_POST['locable_hero_image_3'] ?? ''));
+        update_option('locable_hero_badge_text',       sanitize_text_field($_POST['locable_hero_badge_text'] ?? ''));
+
+        $message = "<div class='notice notice-success is-dismissible'><p><strong>🎉 Settings, Hero Collage, Logo, Favicon &amp; SEO updated and synced with Next.js frontend!</strong></p></div>";
     }
 
     $current_key     = get_option('locable_google_maps_api_key', '');
@@ -431,6 +437,11 @@ function locable_maps_settings_page() {
     $site_logo_dark  = get_option('locable_site_logo_dark', '');
     $site_favicon    = get_option('locable_site_favicon', get_site_icon_url(512) ?: '');
     $meta_desc       = get_option('locable_meta_description', 'Discover verified local businesses, medical spas, contractors, and services in San Diego.');
+
+    $hero_image_1    = get_option('locable_hero_image_1', '');
+    $hero_image_2    = get_option('locable_hero_image_2', '');
+    $hero_image_3    = get_option('locable_hero_image_3', '');
+    $hero_badge_txt  = get_option('locable_hero_badge_text', 'VERIFIED LOCAL BUSINESS DIRECTORY •');
 
     // Ensure WP Media uploader is enqueued
     wp_enqueue_media();
@@ -521,9 +532,79 @@ function locable_maps_settings_page() {
                 </div>
             </div>
 
-            <!-- Section 3: Technical & Fallbacks -->
+            <!-- Section 3: Homepage Hero Section Images & Collage -->
+            <div style="border-bottom:1px solid #e5e7eb;padding-bottom:20px;margin-bottom:25px;">
+                <h2 style="margin-top:0;color:#111;font-size:1.25rem;">3. Homepage Hero Collage &amp; Badge</h2>
+                <p style="font-size:13px;color:#666;">Customize the 3 showcase images displayed in the interactive tilted collage on the homepage hero section, as well as the spinning circular badge text.</p>
+
+                <!-- Hero Image 1 (Top Left) -->
+                <div style="margin-bottom:20px;">
+                    <label style="font-weight:600;display:block;margin-bottom:6px;color:#1f2937;">Hero Image 1 (Top Left Card – e.g. Medical Spa / Healthcare / Wellness):</label>
+                    <div style="display:flex;gap:10px;align-items:center;margin-bottom:8px;">
+                        <input type="url" id="locable_hero_image_1" name="locable_hero_image_1" value="<?php echo esc_url($hero_image_1); ?>" placeholder="Leave blank for default: /images/hero_medical_spa.jpg" style="flex:1;padding:8px;border-radius:6px;border:1px solid #d1d5db;" />
+                        <button type="button" class="button locable-upload-btn" data-target="#locable_hero_image_1" data-preview="#preview_hero_image_1" style="padding:4px 12px;display:flex;align-items:center;gap:4px;">
+                            📁 Choose / Upload
+                        </button>
+                        <button type="button" class="button locable-clear-btn" data-target="#locable_hero_image_1" data-preview="#preview_hero_image_1" style="padding:4px 8px;color:#dc2626;">
+                            ✕ Clear
+                        </button>
+                    </div>
+                    <div id="preview_hero_image_1" style="padding:8px;background:#f9fafb;border:1px dashed #d1d5db;border-radius:8px;display:<?php echo $hero_image_1 ? 'inline-block' : 'none'; ?>;max-height:100px;">
+                        <?php if ($hero_image_1): ?>
+                            <img src="<?php echo esc_url($hero_image_1); ?>" alt="Hero 1 Preview" style="max-height:80px;max-width:240px;object-fit:cover;border-radius:6px;display:block;" />
+                        <?php endif; ?>
+                    </div>
+                </div>
+
+                <!-- Hero Image 2 (Bottom Left) -->
+                <div style="margin-bottom:20px;">
+                    <label style="font-weight:600;display:block;margin-bottom:6px;color:#1f2937;">Hero Image 2 (Bottom Left Card – e.g. Contractor / Trade Pro / Electrician):</label>
+                    <div style="display:flex;gap:10px;align-items:center;margin-bottom:8px;">
+                        <input type="url" id="locable_hero_image_2" name="locable_hero_image_2" value="<?php echo esc_url($hero_image_2); ?>" placeholder="Leave blank for default: /images/hero_contractor_pro.jpg" style="flex:1;padding:8px;border-radius:6px;border:1px solid #d1d5db;" />
+                        <button type="button" class="button locable-upload-btn" data-target="#locable_hero_image_2" data-preview="#preview_hero_image_2" style="padding:4px 12px;display:flex;align-items:center;gap:4px;">
+                            📁 Choose / Upload
+                        </button>
+                        <button type="button" class="button locable-clear-btn" data-target="#locable_hero_image_2" data-preview="#preview_hero_image_2" style="padding:4px 8px;color:#dc2626;">
+                            ✕ Clear
+                        </button>
+                    </div>
+                    <div id="preview_hero_image_2" style="padding:8px;background:#f9fafb;border:1px dashed #d1d5db;border-radius:8px;display:<?php echo $hero_image_2 ? 'inline-block' : 'none'; ?>;max-height:100px;">
+                        <?php if ($hero_image_2): ?>
+                            <img src="<?php echo esc_url($hero_image_2); ?>" alt="Hero 2 Preview" style="max-height:80px;max-width:240px;object-fit:cover;border-radius:6px;display:block;" />
+                        <?php endif; ?>
+                    </div>
+                </div>
+
+                <!-- Hero Image 3 (Right Tall) -->
+                <div style="margin-bottom:20px;">
+                    <label style="font-weight:600;display:block;margin-bottom:6px;color:#1f2937;">Hero Image 3 (Right Tall Card – e.g. Retail Storefront / Cafe / Boutique):</label>
+                    <div style="display:flex;gap:10px;align-items:center;margin-bottom:8px;">
+                        <input type="url" id="locable_hero_image_3" name="locable_hero_image_3" value="<?php echo esc_url($hero_image_3); ?>" placeholder="Leave blank for default: /images/hero_storefront.jpg" style="flex:1;padding:8px;border-radius:6px;border:1px solid #d1d5db;" />
+                        <button type="button" class="button locable-upload-btn" data-target="#locable_hero_image_3" data-preview="#preview_hero_image_3" style="padding:4px 12px;display:flex;align-items:center;gap:4px;">
+                            📁 Choose / Upload
+                        </button>
+                        <button type="button" class="button locable-clear-btn" data-target="#locable_hero_image_3" data-preview="#preview_hero_image_3" style="padding:4px 8px;color:#dc2626;">
+                            ✕ Clear
+                        </button>
+                    </div>
+                    <div id="preview_hero_image_3" style="padding:8px;background:#f9fafb;border:1px dashed #d1d5db;border-radius:8px;display:<?php echo $hero_image_3 ? 'inline-block' : 'none'; ?>;max-height:100px;">
+                        <?php if ($hero_image_3): ?>
+                            <img src="<?php echo esc_url($hero_image_3); ?>" alt="Hero 3 Preview" style="max-height:80px;max-width:240px;object-fit:cover;border-radius:6px;display:block;" />
+                        <?php endif; ?>
+                    </div>
+                </div>
+
+                <!-- Rotating Circular Badge Text -->
+                <div style="margin-bottom:10px;">
+                    <label style="font-weight:600;display:block;margin-bottom:6px;color:#1f2937;">Spinning Circular Badge Text:</label>
+                    <input type="text" name="locable_hero_badge_text" value="<?php echo esc_attr($hero_badge_txt); ?>" placeholder="VERIFIED LOCAL BUSINESS DIRECTORY •" style="width:100%;padding:8px;border-radius:6px;border:1px solid #d1d5db;" />
+                    <p style="font-size:12px;color:#6b7280;margin-top:4px;">Text that rotates along the circular badge ring overlaying the hero collage (approx 30–45 characters recommended, e.g. "VERIFIED LOCAL BUSINESS DIRECTORY •").</p>
+                </div>
+            </div>
+
+            <!-- Section 4: Technical & Fallbacks -->
             <div style="margin-bottom:25px;">
-                <h2 style="margin-top:0;color:#111;font-size:1.25rem;">3. Maps Key &amp; Placeholder Fallbacks</h2>
+                <h2 style="margin-top:0;color:#111;font-size:1.25rem;">4. Maps Key &amp; Placeholder Fallbacks</h2>
 
                 <div style="margin-bottom:15px;">
                     <label style="font-weight:600;display:block;margin-bottom:6px;color:#1f2937;">Google Maps JavaScript API Key:</label>
@@ -555,7 +636,7 @@ function locable_maps_settings_page() {
             var previewBox = $(button.data('preview'));
 
             var customUploader = wp.media({
-                title: 'Select or Upload Logo / Favicon',
+                title: 'Select or Upload Image',
                 button: { text: 'Use this Image' },
                 multiple: false
             });
@@ -563,10 +644,19 @@ function locable_maps_settings_page() {
             customUploader.on('select', function() {
                 var attachment = customUploader.state().get('selection').first().toJSON();
                 targetInput.val(attachment.url);
-                previewBox.show().html('<img src="' + attachment.url + '" style="max-height:60px;max-width:240px;object-fit:contain;display:block;" />');
+                previewBox.show().html('<img src="' + attachment.url + '" style="max-height:80px;max-width:240px;object-fit:cover;border-radius:6px;display:block;" />');
             });
 
             customUploader.open();
+        });
+
+        $('.locable-clear-btn').on('click', function(e) {
+            e.preventDefault();
+            var button = $(this);
+            var targetInput = $(button.data('target'));
+            var previewBox = $(button.data('preview'));
+            targetInput.val('');
+            previewBox.hide().html('');
         });
     });
     </script>
@@ -1697,12 +1787,21 @@ function locable_rest_get_branding() {
     $favicon   = get_option('locable_site_favicon', get_site_icon_url(512) ?: '');
     $meta_desc = get_option('locable_meta_description', 'Discover verified local businesses, medical spas, contractors, and services in San Diego.');
 
+    $hero_image_1   = get_option('locable_hero_image_1', '');
+    $hero_image_2   = get_option('locable_hero_image_2', '');
+    $hero_image_3   = get_option('locable_hero_image_3', '');
+    $hero_badge_txt = get_option('locable_hero_badge_text', 'VERIFIED LOCAL BUSINESS DIRECTORY •');
+
     $data = array(
         'siteName'        => $site_name,
         'tagline'         => $site_tagline,
         'logo'            => $logo,
         'logoDark'        => $logo_dark,
         'favicon'         => $favicon,
+        'heroImage1'      => $hero_image_1,
+        'heroImage2'      => $hero_image_2,
+        'heroImage3'      => $hero_image_3,
+        'heroBadgeText'   => $hero_badge_txt,
         'metaTitle'       => $site_name . ' | ' . $site_tagline,
         'metaDescription' => $meta_desc,
     );

@@ -145,4 +145,8 @@ export interface SiteBranding {
   favicon?: string;
   metaTitle?: string;
   metaDescription?: string;
+  heroImage1?: string;
+  heroImage2?: string;
+  heroImage3?: string;
+  heroBadgeText?: string;
 }

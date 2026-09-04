@@ -165,6 +165,10 @@ export async function fetchCachedBranding(): Promise<SiteBranding> {
       logo: '',
       logoDark: '',
       favicon: '',
+      heroImage1: '/images/hero_medical_spa.jpg',
+      heroImage2: '/images/hero_contractor_pro.jpg',
+      heroImage3: '/images/hero_storefront.jpg',
+      heroBadgeText: 'VERIFIED LOCAL BUSINESS DIRECTORY •',
     };
   })().finally(() => {
     pendingBrandingPromise = null;
