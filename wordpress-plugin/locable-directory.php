@@ -807,10 +807,14 @@ function locable_csv_importer_page() {
                     </div>
                 </div>
 
-                <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:#1e293b;font-weight:600;cursor:pointer;">
-                    <input type="checkbox" id="locable_ai_only_empty" checked />
-                    Only generate for listings with missing / empty description (Preserves custom text)
-                </label>
+                <div style="margin-top:12px;">
+                    <label style="font-weight:700;font-size:12px;color:#475569;display:block;margin-bottom:5px;">Batch Generation Scope:</label>
+                    <select id="locable_ai_scope" style="width:100%;padding:8px 10px;border-radius:6px;border:1px solid #cbd5e1;font-size:13px;background:#fff;font-weight:600;color:#1e293b;">
+                        <option value="empty_or_synthetic" selected>✨ Listings with Empty or Default Template descriptions (Recommended - preserves your custom text)</option>
+                        <option value="empty_only">Only Strictly Empty listings (No description entered)</option>
+                        <option value="all">Overwrite All Listings (Generates fresh AI content for every business)</option>
+                    </select>
+                </div>
             </div>
 
             <div style="display:flex;gap:10px;align-items:center;">
@@ -1280,6 +1284,23 @@ function locable_csv_importer_page() {
             });
         }
 
+        const keyInput   = document.getElementById('locable_ai_bulk_key');
+        const provSelect = document.getElementById('locable_ai_bulk_provider');
+        function syncProviderFromKey() {
+            if (!keyInput || !provSelect) return;
+            const val = keyInput.value.trim();
+            if (val.startsWith('sk-')) {
+                provSelect.value = 'openai';
+            } else if (val.startsWith('AIzaSy')) {
+                provSelect.value = 'gemini';
+            }
+        }
+        if (keyInput) {
+            keyInput.addEventListener('input', syncProviderFromKey);
+            keyInput.addEventListener('change', syncProviderFromKey);
+            syncProviderFromKey();
+        }
+
         let aiBatchAborted = false;
         if (aiStopBtn) {
             aiStopBtn.addEventListener('click', () => {
@@ -1290,9 +1311,9 @@ function locable_csv_importer_page() {
 
         if (aiStartBtn) {
             aiStartBtn.addEventListener('click', async () => {
-                const prov = document.getElementById('locable_ai_bulk_provider').value;
-                const key  = document.getElementById('locable_ai_bulk_key').value.trim();
-                const onlyEmpty = document.getElementById('locable_ai_only_empty').checked ? 1 : 0;
+                const prov  = document.getElementById('locable_ai_bulk_provider').value;
+                const key   = document.getElementById('locable_ai_bulk_key').value.trim();
+                const scope = document.getElementById('locable_ai_scope').value;
 
                 if (!key) {
                     alert('Please enter your Google Gemini or OpenAI API Key first.');
@@ -1330,7 +1351,7 @@ function locable_csv_importer_page() {
                                 _nonce: aiNonce,
                                 provider: prov,
                                 api_key: key,
-                                only_empty: onlyEmpty,
+                                scope: scope,
                                 offset: offset
                             })
                         });
@@ -1350,13 +1371,18 @@ function locable_csv_importer_page() {
                         done = json.data.done;
 
                         const total = json.data.total || 100;
-                        const pct = Math.min(100, Math.round(Math.min(offset || totalGenerated, total) / total * 100));
+                        const pct = Math.min(100, Math.round(Math.min(offset, total) / total * 100));
                         aiBar.style.width = pct + '%';
-                        aiLabel.textContent = `Generated ${totalGenerated} descriptions… (Listing batch complete)`;
+                        aiLabel.textContent = `Generated ${totalGenerated} descriptions… (${Math.min(offset, total)} / ${total} processed)`;
 
                         // Small pause to avoid hitting rate limits
                         await new Promise(r => setTimeout(r, 250));
                     } catch(e) {
+                        aiResult.style.display = 'block';
+                        aiResult.style.background = '#fef2f2';
+                        aiResult.style.border = '1px solid #fecaca';
+                        aiResult.style.color = '#991b1b';
+                        aiResult.innerHTML = '❌ <strong>Network / Timeout Error:</strong> ' + (e?.message || 'Server did not respond.');
                         done = true;
                     }
                 }
@@ -1371,7 +1397,7 @@ function locable_csv_importer_page() {
                     aiResult.style.background = '#ecfdf5';
                     aiResult.style.border = '1px solid #6ee7b7';
                     aiResult.style.color = '#065f46';
-                    aiResult.innerHTML = `✅ <strong>Batch Complete!</strong> Successfully generated and saved <strong>${totalGenerated}</strong> SEO-optimized business descriptions.`;
+                    aiResult.innerHTML = `✅ <strong>Batch Complete!</strong> Successfully processed directory. Generated <strong>${totalGenerated}</strong> SEO-optimized business descriptions. Frontend cache was refreshed with zero delay.`;
                 }
             });
         }
@@ -1893,11 +1919,30 @@ Strict Guidelines:
 }
 
 /**
+ * Checks if a description matches the automated default programmatic fallback template.
+ */
+function locable_is_synthetic_description($desc) {
+    if (empty($desc) || !is_string($desc) || trim($desc) === '') return false;
+    return (
+        strpos($desc, 'is a premier ') !== false &&
+        strpos($desc, 'delivers dependable') !== false
+    );
+}
+
+/**
  * Calls Google Gemini or OpenAI API to generate text.
  */
 function locable_call_ai_api($prompt, $provider = 'gemini', $api_key = '', $model = '') {
+    $api_key = trim((string)$api_key);
     if (empty($api_key)) {
         return new WP_Error('no_key', 'AI API key is missing. Please configure your API key in Directory Settings or on the AI Generator panel.');
+    }
+
+    // Auto-detect provider if key prefix is recognized
+    if (strpos($api_key, 'sk-') === 0) {
+        $provider = 'openai';
+    } elseif (strpos($api_key, 'AIzaSy') === 0) {
+        $provider = 'gemini';
     }
 
     if ($provider === 'openai') {
@@ -2034,8 +2079,7 @@ function locable_ajax_ai_generate_single() {
     $model    = get_option('locable_ai_model', '');
 
     if (empty($api_key)) {
-        $result = locable_synthesize_about_content($title, $type, $city, 'CA', $address, $rating, $reviews, $services);
-        wp_send_json_success(['text' => $result]);
+        wp_send_json_error(['message' => 'No AI API key found. Please save your Google Gemini or OpenAI API Key in Directory Settings or on the CSV Import page.'], 400);
         return;
     }
 
@@ -2044,6 +2088,7 @@ function locable_ajax_ai_generate_single() {
 
     if (is_wp_error($result)) {
         wp_send_json_error(['message' => $result->get_error_message()], 500);
+        return;
     }
 
     wp_send_json_success(['text' => $result]);
@@ -2062,10 +2107,18 @@ function locable_ajax_ai_generate_batch() {
     $provider   = sanitize_text_field($_POST['provider'] ?? '') ?: get_option('locable_ai_provider', 'gemini');
     $api_key    = sanitize_text_field($_POST['api_key'] ?? '') ?: get_option('locable_ai_api_key', '');
     $model      = sanitize_text_field($_POST['model'] ?? '') ?: get_option('locable_ai_model', '');
-    $only_empty = !empty($_POST['only_empty']);
+    $scope      = sanitize_text_field($_POST['scope'] ?? '');
+    if (empty($scope)) {
+        $scope = !empty($_POST['only_empty']) ? 'empty_or_synthetic' : 'all';
+    }
     $offset     = intval($_POST['offset'] ?? 0);
-    $batch_size = 8; // Process 8 listings per batch to keep response swift
-    $has_api_key = !empty($api_key);
+    $batch_size = 6; // Process 6 listings per batch to stay safely within AI rate limits
+    $has_api_key = !empty(trim($api_key));
+
+    if (!$has_api_key) {
+        wp_send_json_error(['message' => 'No AI API key found. Please enter and save your Google Gemini or OpenAI API key.'], 400);
+        return;
+    }
 
     $query_args = array(
         'post_type'      => 'business_listing',
@@ -2073,27 +2126,33 @@ function locable_ajax_ai_generate_batch() {
         'post_status'    => 'any',
         'orderby'        => 'ID',
         'order'          => 'ASC',
+        'offset'         => $offset,
     );
-
-    if ($only_empty) {
-        $query_args['meta_query'] = array(
-            'relation' => 'OR',
-            array('key' => 'description', 'compare' => 'NOT EXISTS'),
-            array('key' => 'description', 'value' => '', 'compare' => '='),
-            array('key' => 'description', 'value' => ' ', 'compare' => '='),
-        );
-        $query_args['offset'] = 0;
-    } else {
-        $query_args['offset'] = $offset;
-    }
 
     $posts = get_posts($query_args);
     $generated = 0;
     global $wpdb;
 
     foreach ($posts as $p) {
-        $pid      = $p->ID;
-        $title    = $p->post_title;
+        $pid          = $p->ID;
+        $title        = $p->post_title;
+        $current_desc = get_post_meta($pid, 'description', true);
+        if ($current_desc === '' || $current_desc === false) {
+            $current_desc = $p->post_content;
+        }
+
+        $is_empty     = empty(trim((string)$current_desc));
+        $is_synthetic = locable_is_synthetic_description($current_desc);
+
+        // Filter based on scope
+        if ($scope === 'empty_only' && !$is_empty) {
+            continue;
+        }
+        if ($scope === 'empty_or_synthetic' && !$is_empty && !$is_synthetic) {
+            // Preserve custom user-written descriptions
+            continue;
+        }
+
         $type     = get_post_meta($pid, 'type', true) ?: 'Local Business';
         $city     = get_post_meta($pid, 'city', true) ?: 'San Diego';
         $address  = get_post_meta($pid, 'address', true) ?: '';
@@ -2101,21 +2160,39 @@ function locable_ajax_ai_generate_batch() {
         $rating   = get_post_meta($pid, 'rating', true) ?: '5.0';
         $reviews  = get_post_meta($pid, 'reviews', true) ?: '1';
 
-        if ($has_api_key) {
-            $prompt = locable_build_seo_prompt($title, $type, $city, $address, $services, $rating, $reviews);
-            $ai_text = locable_call_ai_api($prompt, $provider, $api_key, $model);
-        } else {
-            $ai_text = locable_synthesize_about_content($title, $type, $city, 'CA', $address, $rating, $reviews, $services);
+        $prompt  = locable_build_seo_prompt($title, $type, $city, $address, $services, $rating, $reviews);
+        $ai_text = locable_call_ai_api($prompt, $provider, $api_key, $model);
+
+        if (is_wp_error($ai_text)) {
+            wp_send_json_error(array(
+                'message' => 'AI Generation failed on "' . esc_html($title) . '": ' . $ai_text->get_error_message()
+            ), 500);
+            return;
         }
 
-        if (!is_wp_error($ai_text) && !empty($ai_text)) {
+        if (!empty($ai_text)) {
             update_post_meta($pid, 'description', sanitize_textarea_field($ai_text));
-            $wpdb->update($wpdb->posts, array('post_content' => sanitize_textarea_field($ai_text)), array('ID' => $pid));
+            $now     = current_time('mysql');
+            $now_gmt = current_time('mysql', 1);
+            $wpdb->update(
+                $wpdb->posts,
+                array(
+                    'post_content'      => sanitize_textarea_field($ai_text),
+                    'post_modified'     => $now,
+                    'post_modified_gmt' => $now_gmt
+                ),
+                array('ID' => $pid)
+            );
+            clean_post_cache($pid);
             $generated++;
         }
     }
 
-    // Count total
+    if ($generated > 0) {
+        locable_invalidate_frontend_cache();
+    }
+
+    // Count total listings
     $count_obj = wp_count_posts('business_listing');
     $total_listings = 0;
     foreach ((array)$count_obj as $n) { $total_listings += (int)$n; }
@@ -2123,7 +2200,7 @@ function locable_ajax_ai_generate_batch() {
     wp_send_json_success(array(
         'generated' => $generated,
         'batchCount'=> count($posts),
-        'offset'    => $only_empty ? 0 : ($offset + count($posts)),
+        'offset'    => $offset + count($posts),
         'done'      => count($posts) < $batch_size,
         'total'     => $total_listings
     ));
@@ -3546,19 +3623,7 @@ function locable_render_business_fields_metabox($post) {
     if ($description === '' || $description === false) {
         $description = $post->post_content;
     }
-    if (empty(trim((string)$description))) {
-        $description = locable_synthesize_about_content(
-            $post->post_title,
-            $type,
-            $city,
-            $state,
-            $address,
-            $rating,
-            $reviews,
-            $serviceOptions,
-            $phone
-        );
-    }
+    // Note: If description is empty, do NOT prefill with synthetic text so that the user and bulk AI engine can detect it as genuinely empty.
 
     ?>
     <style>
@@ -3719,6 +3784,11 @@ function locable_render_business_fields_metabox($post) {
             <span style="font-size:11px;color:#64748b;margin-top:4px;">
                 Displayed prominently under "About {Business}" on the listing page, in SEO meta descriptions, and Google LocalBusiness structured data.
             </span>
+            <?php if (empty(trim((string)$description))): ?>
+                <div style="margin-top:8px;font-size:12px;color:#1e40af;background:#eff6ff;border:1px solid #bfdbfe;padding:8px 12px;border-radius:6px;line-height:1.5;">
+                    💡 <strong>Status: Using dynamic programmatic SEO fallback.</strong> No custom description is saved yet. The frontend automatically displays a local business overview. To generate a unique permanent description, click <strong>✨ Generate SEO Description with AI</strong> above or write your own text, then click "Update".
+                </div>
+            <?php endif; ?>
             <div id="locable_ai_single_status" style="display:none;margin-top:8px;font-size:12px;padding:8px 12px;border-radius:6px;"></div>
         </div>
 
