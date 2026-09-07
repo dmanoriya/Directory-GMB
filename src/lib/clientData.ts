@@ -15,11 +15,11 @@ let pendingCategoryPromise: Promise<Category[]> | null = null;
 let pendingCityPromise: Promise<LocationCity[]> | null = null;
 let pendingPostPromise: Promise<BlogPost[]> | null = null;
 
-const CLIENT_CACHE_TTL = 300000; // 5 minutes
+const CLIENT_CACHE_TTL = 5000; // 5 seconds fresh cache for instant updates
 
 export async function fetchCachedBusinesses(): Promise<BusinessListing[]> {
   const now = Date.now();
-  if (businessCache && businessCache.data.length > 0 && now - businessCache.timestamp < CLIENT_CACHE_TTL) {
+  if (businessCache && now - businessCache.timestamp < CLIENT_CACHE_TTL) {
     return businessCache.data;
   }
   if (pendingBusinessPromise) return pendingBusinessPromise;
@@ -27,10 +27,10 @@ export async function fetchCachedBusinesses(): Promise<BusinessListing[]> {
   pendingBusinessPromise = (async () => {
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
-        const r = await fetch('/api/businesses');
+        const r = await fetch('/api/businesses?_t=' + Date.now(), { cache: 'no-store' });
         if (r.ok) {
           const data = await r.json();
-          if (Array.isArray(data) && data.length > 0) {
+          if (Array.isArray(data)) {
             businessCache = { data, timestamp: Date.now() };
             return data;
           }
@@ -49,7 +49,7 @@ export async function fetchCachedBusinesses(): Promise<BusinessListing[]> {
 
 export async function fetchCachedCategories(): Promise<Category[]> {
   const now = Date.now();
-  if (categoryCache && categoryCache.data.length > 0 && now - categoryCache.timestamp < CLIENT_CACHE_TTL) {
+  if (categoryCache && now - categoryCache.timestamp < CLIENT_CACHE_TTL) {
     return categoryCache.data;
   }
   if (pendingCategoryPromise) return pendingCategoryPromise;
@@ -57,10 +57,10 @@ export async function fetchCachedCategories(): Promise<Category[]> {
   pendingCategoryPromise = (async () => {
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
-        const r = await fetch('/api/categories');
+        const r = await fetch('/api/categories?_t=' + Date.now(), { cache: 'no-store' });
         if (r.ok) {
           const data = await r.json();
-          if (Array.isArray(data) && data.length > 0) {
+          if (Array.isArray(data)) {
             categoryCache = { data, timestamp: Date.now() };
             return data;
           }
@@ -79,7 +79,7 @@ export async function fetchCachedCategories(): Promise<Category[]> {
 
 export async function fetchCachedCities(): Promise<LocationCity[]> {
   const now = Date.now();
-  if (cityCache && cityCache.data.length > 0 && now - cityCache.timestamp < CLIENT_CACHE_TTL) {
+  if (cityCache && now - cityCache.timestamp < CLIENT_CACHE_TTL) {
     return cityCache.data;
   }
   if (pendingCityPromise) return pendingCityPromise;
@@ -87,10 +87,10 @@ export async function fetchCachedCities(): Promise<LocationCity[]> {
   pendingCityPromise = (async () => {
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
-        const r = await fetch('/api/cities');
+        const r = await fetch('/api/cities?_t=' + Date.now(), { cache: 'no-store' });
         if (r.ok) {
           const data = await r.json();
-          if (Array.isArray(data) && data.length > 0) {
+          if (Array.isArray(data)) {
             cityCache = { data, timestamp: Date.now() };
             return data;
           }
@@ -109,7 +109,7 @@ export async function fetchCachedCities(): Promise<LocationCity[]> {
 
 export async function fetchCachedPosts(): Promise<BlogPost[]> {
   const now = Date.now();
-  if (postCache && postCache.data.length > 0 && now - postCache.timestamp < CLIENT_CACHE_TTL) {
+  if (postCache && now - postCache.timestamp < CLIENT_CACHE_TTL) {
     return postCache.data;
   }
   if (pendingPostPromise) return pendingPostPromise;
@@ -117,10 +117,10 @@ export async function fetchCachedPosts(): Promise<BlogPost[]> {
   pendingPostPromise = (async () => {
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
-        const r = await fetch('/api/posts');
+        const r = await fetch('/api/posts?_t=' + Date.now(), { cache: 'no-store' });
         if (r.ok) {
           const data = await r.json();
-          if (Array.isArray(data) && data.length > 0) {
+          if (Array.isArray(data)) {
             postCache = { data, timestamp: Date.now() };
             return data;
           }

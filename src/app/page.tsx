@@ -265,10 +265,10 @@ export default function HomePage() {
       fetchCachedBranding()
     ]).then(([biz, cats, cits, posts, brand]) => {
       if (!active) return;
-      if (Array.isArray(biz) && biz.length > 0) setAllBusinesses(biz);
-      if (Array.isArray(cats) && cats.length > 0) setDynamicCategories(cats);
-      if (Array.isArray(cits) && cits.length > 0) setDynamicCities(cits);
-      if (Array.isArray(posts) && posts.length > 0) setDynamicPosts(posts);
+      if (Array.isArray(biz)) setAllBusinesses(biz);
+      if (Array.isArray(cats)) setDynamicCategories(cats);
+      if (Array.isArray(cits)) setDynamicCities(cits);
+      if (Array.isArray(posts)) setDynamicPosts(posts);
       if (brand) setBranding(brand);
       setDataLoading(false);
     }).catch(() => {

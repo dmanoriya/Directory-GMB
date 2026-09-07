@@ -39,6 +39,26 @@ export default function WordPressSyncPage() {
     setIsTesting(false);
   };
 
+  const [isClearingCache, setIsClearingCache] = useState(false);
+  const [cacheMessage, setCacheMessage] = useState<string | null>(null);
+
+  const handleClearCache = async () => {
+    setIsClearingCache(true);
+    setCacheMessage(null);
+    try {
+      const res = await fetch('/api/cache/clear', { cache: 'no-store' });
+      if (res.ok) {
+        setCacheMessage('⚡ Cache flushed successfully! Next.js is now freshly synced with WordPress.');
+        const active = getWpApiUrl();
+        if (active) await runTest(active);
+      }
+    } catch (e) {
+      setCacheMessage('Failed to flush server cache.');
+    } finally {
+      setIsClearingCache(false);
+    }
+  };
+
   const handleSaveUrl = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!wpUrl) return;
@@ -124,11 +144,48 @@ export default function WordPressSyncPage() {
                     'Connect & Save'
                   )}
                 </button>
+                <button
+                  type="button"
+                  onClick={handleClearCache}
+                  disabled={isClearingCache}
+                  className="btn"
+                  style={{
+                    padding: '0.85rem 1.25rem',
+                    whiteSpace: 'nowrap',
+                    borderRadius: '12px',
+                    fontWeight: '700',
+                    background: '#f1f5f9',
+                    border: '1px solid #cbd5e1',
+                    color: '#0f172a',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.4rem'
+                  }}
+                >
+                  <RefreshCw size={16} className={isClearingCache ? 'animate-spin' : ''} />
+                  {isClearingCache ? 'Flushing Cache...' : 'Flush Cache & Resync'}
+                </button>
               </div>
               <span style={{ fontSize: '0.775rem', color: '#64748b', marginTop: '0.4rem', display: 'block' }}>
                 Example: <code>https://cms.verifieddirectory.com</code> or local dev <code>http://mysite.local</code>
               </span>
             </div>
+
+            {/* Cache Flush Message */}
+            {cacheMessage && (
+              <div style={{
+                padding: '0.85rem 1rem',
+                borderRadius: '12px',
+                background: '#eff6ff',
+                color: '#1e40af',
+                border: '1px solid #bfdbfe',
+                fontSize: '0.875rem',
+                fontWeight: '600'
+              }}>
+                {cacheMessage}
+              </div>
+            )}
 
             {/* Connection Status Banner */}
             {connectionStatus && (
