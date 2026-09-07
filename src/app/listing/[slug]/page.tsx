@@ -16,6 +16,7 @@ import {
   UserCheck
 } from 'lucide-react';
 import { getBusinessBySlug, getBusinesses, getReviewsForBusiness, parseServiceOptions } from '@/lib/wordpress';
+import { getListingAboutParagraphs, getListingMetaSnippet, generateLocalBusinessSchema } from '@/lib/seoContent';
 import ReviewsSection from '@/components/ReviewsSection';
 import BusinessCard from '@/components/BusinessCard';
 import SafeImage from '@/components/SafeImage';
@@ -37,16 +38,18 @@ export async function generateMetadata({ params }: ListingPageProps) {
   const business = await getBusinessBySlug(slug);
   if (!business) return { title: 'Business Not Found | San Diego Directory' };
 
+  const metaSnippet = getListingMetaSnippet(business);
+
   return {
-    title: `${business.title} | San Diego Directory`,
-    description: `${business.title} located at ${business.address}. Rated ${business.rating} stars with ${business.reviews} reviews on Google Maps.`,
+    title: `${business.title} | ${business.city}, CA | San Diego Directory`,
+    description: metaSnippet,
     alternates: {
       canonical: `https://sandiegobusinesscircle.com/listing/${business.slug}`,
     },
     openGraph: {
-      title: `${business.title} | San Diego Directory`,
-      description: business.description,
-      images: [business.thumbnail],
+      title: `${business.title} | ${business.city}, CA`,
+      description: metaSnippet,
+      images: [business.thumbnail || business.coverImage || ''],
       url: `https://sandiegobusinesscircle.com/listing/${business.slug}`,
     }
   };
@@ -88,19 +91,25 @@ export default async function ListingDetailPage({ params }: ListingPageProps) {
   const licenseLabel = isTradeService ? 'CSLB License Status:' : 'Registration Status:';
   const licenseValue = business.licenseStatus || 'ACTIVE (Verified)';
 
+  // Rich multi-paragraph About content (custom if written in WP, or dynamic programmatic SEO)
+  const aboutParagraphs = getListingAboutParagraphs(business);
+  const fullDescription = aboutParagraphs.join(' ');
+
   // Schema.org JSON-LD Structured Data Generator using placeId & extracted CSV fields
   const schemaJsonLd = {
     '@context': 'https://schema.org',
     '@type': 'LocalBusiness',
     name: business.title,
-    image: business.thumbnail,
+    description: fullDescription,
+    image: business.thumbnail || business.coverImage,
     telephone: business.phone,
-    url: business.website,
+    url: `https://sandiegobusinesscircle.com/listing/${business.slug}`,
     address: {
       '@type': 'PostalAddress',
       streetAddress: business.address,
       addressLocality: business.city,
       addressRegion: business.state,
+      postalCode: business.zip,
       addressCountry: 'US'
     },
     geo: {
@@ -161,15 +170,24 @@ export default async function ListingDetailPage({ params }: ListingPageProps) {
           <div className="listing-main-col">
             {/* 1. OVERVIEW & AMENITIES */}
             <div className="card listing-block-about" style={{ padding: '2rem' }}>
-              <h2 style={{ fontSize: '1.35rem', fontWeight: '800', color: '#0f172a', marginBottom: '1rem', borderBottom: '1px solid #f1f5f9', paddingBottom: '0.75rem' }}>
-                About {business.title}
-              </h2>
-              <p style={{ fontSize: '0.975rem', color: '#334155', lineHeight: '1.7', marginBottom: '1.25rem' }}>
-                {business.description || `${business.title} is a premier ${business.type} operating in ${business.city}${business.state ? `, ${business.state}` : ''}.`}
-              </p>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', borderBottom: '1px solid #f1f5f9', paddingBottom: '0.75rem' }}>
+                <h2 style={{ fontSize: '1.35rem', fontWeight: '800', color: '#0f172a', margin: 0 }}>
+                  About {business.title}
+                </h2>
+                <span style={{ fontSize: '0.75rem', fontWeight: '600', color: '#64748b', background: '#f8fafc', border: '1px solid #e2e8f0', padding: '0.2rem 0.6rem', borderRadius: '6px' }}>
+                  Verified Overview
+                </span>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.95rem', marginBottom: '1.25rem' }}>
+                {aboutParagraphs.map((para, idx) => (
+                  <p key={idx} style={{ fontSize: '0.975rem', color: '#334155', lineHeight: '1.75', margin: 0 }}>
+                    {para}
+                  </p>
+                ))}
+              </div>
 
               {fallbackServices.length > 0 && (
-                <div style={{ marginTop: '1.5rem' }}>
+                <div style={{ marginTop: '1.5rem', paddingTop: '1.25rem', borderTop: '1px solid #f1f5f9' }}>
                   <h4 style={{ fontSize: '0.925rem', fontWeight: '700', color: '#0f172a', marginBottom: '0.75rem' }}>
                     Amenities &amp; Service Options
                   </h4>

@@ -28,6 +28,8 @@ export interface BusinessListing {
   };
   serviceOptions: string[];
   thumbnail: string;
+  coverImage?: string;
+  zip?: string;
   latitude: number;
   longitude: number;
   keyword: string;
