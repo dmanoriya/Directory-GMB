@@ -389,73 +389,68 @@ function filterListingsDataset(listings: BusinessListing[], filters?: {
   return results;
 }
 
+function findBusinessInList(list: BusinessListing[], target: string): BusinessListing | null {
+  if (!list || list.length === 0 || !target) return null;
+  const t = target.toLowerCase().trim();
+
+  // PASS 1: Exact canonical slug match
+  const exactSlug = list.find(b => b.slug.toLowerCase() === t);
+  if (exactSlug) return exactSlug;
+
+  // PASS 2: Exact alias match (placeId, WP slug, historical aliases, ID)
+  const exactAlias = list.find(b =>
+    (b.aliases && b.aliases.some(a => a.toLowerCase() === t)) ||
+    b.placeId.toLowerCase() === t ||
+    String(b.id) === t ||
+    (b.wpSlug && b.wpSlug.toLowerCase() === t) ||
+    (b.rawSlug && b.rawSlug.toLowerCase() === t)
+  );
+  if (exactAlias) return exactAlias;
+
+  // PASS 3: Exact title-derived slug match
+  const exactTitle = list.find(b => {
+    const titleSlug = b.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+    if (titleSlug === t) return true;
+    const titleSeo = createSeoSlug(b.title, b.city, b.placeId).toLowerCase();
+    return titleSeo === t;
+  });
+  if (exactTitle) return exactTitle;
+
+  // PASS 4: City variations (e.g. target with or without -san-diego suffix)
+  const cityMatch = list.find(b => {
+    const cityClean = (b.city || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+    if (!cityClean) return false;
+    if (`${t}-${cityClean}` === b.slug.toLowerCase()) return true;
+    if (`${b.slug.toLowerCase()}-${cityClean}` === t) return true;
+    const targetNoCity = t.replace(new RegExp(`-${cityClean}$`), '');
+    const slugNoCity = b.slug.toLowerCase().replace(new RegExp(`-${cityClean}$`), '');
+    if (targetNoCity && targetNoCity === slugNoCity) return true;
+    if (b.wpSlug && targetNoCity === b.wpSlug.toLowerCase()) return true;
+    return false;
+  });
+  if (cityMatch) return cityMatch;
+
+  // PASS 5: Number / duplicate normalization (e.g. 'the-studio-med-spa-2' -> 'the-studio-med-spa')
+  const stripDigits = (s: string) => s.replace(/[0-9]+/g, '').replace(/-+/g, '-').replace(/^-+|-+$/g, '');
+  const tNoDigits = stripDigits(t);
+  if (tNoDigits.length > 5) {
+    const numMatch = list.find(b => {
+      const sNoDigits = stripDigits(b.slug);
+      return sNoDigits === tNoDigits;
+    });
+    if (numMatch) return numMatch;
+  }
+
+  return null;
+}
+
 export const getBusinessBySlug = cache(async (slugOrPlaceId: string): Promise<BusinessListing | null> => {
   const target = (slugOrPlaceId || '').toLowerCase().trim();
   if (!target) return null;
 
-  const isMatch = (b: BusinessListing) => {
-    // 1. Primary canonical slug match
-    if (b.slug.toLowerCase() === target) return true;
-
-    // 2. Aliases match (all historical, title-derived, WP post slugs, placeId, post ID)
-    if (b.aliases && b.aliases.some(a => a.toLowerCase() === target)) return true;
-
-    // 3. Standard identifiers
-    if (b.rawSlug?.toLowerCase() === target) return true;
-    if (b.wpSlug?.toLowerCase() === target) return true;
-    if (b.placeId.toLowerCase() === target) return true;
-    if (b.dataId?.toLowerCase() === target) return true;
-    if (b.id === target) return true;
-
-    // 4. Dynamic title SEO match
-    const titleSeo = createSeoSlug(b.title, b.city, b.placeId).toLowerCase();
-    if (titleSeo === target) return true;
-
-    const titleSlug = b.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
-    if (titleSlug === target) return true;
-
-    // 5. City variations (target with or without city suffix)
-    const cityClean = (b.city || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
-    if (cityClean) {
-      if (`${target}-${cityClean}` === b.slug.toLowerCase()) return true;
-      if (`${b.slug.toLowerCase()}-${cityClean}` === target) return true;
-      const targetNoCity = target.replace(new RegExp(`-${cityClean}$`), '');
-      const slugNoCity = b.slug.toLowerCase().replace(new RegExp(`-${cityClean}$`), '');
-      if (targetNoCity && targetNoCity === slugNoCity) return true;
-      if (b.wpSlug && targetNoCity === b.wpSlug.toLowerCase()) return true;
-    }
-
-    // 6. Number normalization (e.g. matching "the-studio-med-spa2" to "the-studio-med-spa")
-    const stripDigits = (s: string) => s.replace(/[0-9]+/g, '').replace(/-+/g, '-').replace(/^-+|-+$/g, '');
-    const tNoDigits = stripDigits(target);
-    const sNoDigits = stripDigits(b.slug);
-    if (tNoDigits.length > 3 && sNoDigits.length > 3) {
-      if (tNoDigits === sNoDigits) return true;
-      if (stripDigits(titleSeo) === tNoDigits) return true;
-      if (b.wpSlug && stripDigits(b.wpSlug) === tNoDigits) return true;
-    }
-
-    // 7. Token overlap (e.g. 75%+ core words match)
-    const tTokens = target.split('-').filter(w => w.length > 2 && w !== 'san' && w !== 'diego' && w !== 'ca');
-    const slugTokens = b.slug.toLowerCase().split('-').filter(w => w.length > 2 && w !== 'san' && w !== 'diego' && w !== 'ca');
-    if (tTokens.length >= 2 && slugTokens.length >= 2) {
-      const matched = tTokens.filter(tok => slugTokens.some(st => st.includes(tok) || tok.includes(st)));
-      if (matched.length / Math.min(tTokens.length, slugTokens.length) >= 0.75) {
-        return true;
-      }
-    }
-
-    // 8. Prefix / Substring for long slugs
-    if (target.length > 6 && b.slug.length > 6) {
-      if (target.startsWith(b.slug) || b.slug.startsWith(target)) return true;
-    }
-
-    return false;
-  };
-
-  // Check 1: In-memory cache hit for instant 0ms response!
+  // Check 1: In-memory cache hit with phased precision
   if (listingsCache && listingsCache.data.length > 0) {
-    const cachedMatch = listingsCache.data.find(isMatch);
+    const cachedMatch = findBusinessInList(listingsCache.data, target);
     if (cachedMatch) return cachedMatch;
   }
 
@@ -475,7 +470,9 @@ export const getBusinessBySlug = cache(async (slugOrPlaceId: string): Promise<Bu
       if (res.ok) {
         const items = await res.json();
         if (Array.isArray(items) && items.length > 0) {
-          return mapWpBusinessToFormat(items[0]);
+          const mapped = items.map(mapWpBusinessToFormat);
+          const found = findBusinessInList(mapped, target);
+          if (found) return found;
         }
       }
     } catch (e) {
@@ -496,7 +493,9 @@ export const getBusinessBySlug = cache(async (slugOrPlaceId: string): Promise<Bu
         if (resBase.ok) {
           const items = await resBase.json();
           if (Array.isArray(items) && items.length > 0) {
-            return mapWpBusinessToFormat(items[0]);
+            const mapped = items.map(mapWpBusinessToFormat);
+            const found = findBusinessInList(mapped, target);
+            if (found) return found;
           }
         }
       } catch (e) {}
@@ -516,16 +515,16 @@ export const getBusinessBySlug = cache(async (slugOrPlaceId: string): Promise<Bu
         const items = await resSearch.json();
         if (Array.isArray(items) && items.length > 0) {
           const mapped = items.map(mapWpBusinessToFormat);
-          const found = mapped.find(isMatch);
+          const found = findBusinessInList(mapped, target);
           if (found) return found;
         }
       }
     } catch (e) {}
   }
 
-  // Check 3: Full dataset search
+  // Check 3: Full dataset search with phased matching
   const all = await getBusinesses();
-  return all.find(isMatch) || null;
+  return findBusinessInList(all, target);
 });
 
 /**
