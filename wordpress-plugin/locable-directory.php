@@ -706,6 +706,32 @@ function locable_csv_importer_page() {
         </div>
 
         <!-- ═══════════════════════════════════════════════════════ -->
+        <!-- CLEANUP ZONE: Sanitize Business Titles                  -->
+        <!-- ═══════════════════════════════════════════════════════ -->
+        <div id="locable_sanitize_zone" style="background:#f0fdf4;border:2px solid #86efac;padding:24px;border-radius:8px;max-width:680px;margin-top:30px;">
+            <h2 style="margin-top:0;color:#15803d;">✨ Sanitize Business Titles (Clean Pipelines &amp; Spam)</h2>
+            <p style="font-size:13px;color:#166534;margin-bottom:16px;">
+                CSV imports and Google Maps frequently contain keyword stuffing with pipelines (e.g. <code>Skin Medical Spa in San Diego | Skin Tightening | Cryo Fat Freezing | Lipo Cavitation</code>) or subtitle repetition (<code>E Med Spa - Medical Spa in Rancho Bernardo</code>).<br><br>
+                Clicking this will automatically scan all business titles in your database and clean them down to their clean, real business name (e.g. <code>Skin Medical Spa</code>, <code>E Med Spa</code>) while preserving legitimate branch names like <code>SDBotox - Pacific Beach</code>.
+            </p>
+
+            <button id="locable_sanitize_all_btn" class="button button-primary" style="background:#16a34a;border-color:#15803d;padding:8px 20px;font-weight:700;font-size:14px;">
+                ✨ Sanitize All Existing Business Titles
+            </button>
+
+            <!-- Sanitize progress (hidden) -->
+            <div id="locable_san_progress_wrap" style="display:none;margin-top:20px;">
+                <div style="background:#dcfce7;border-radius:8px;overflow:hidden;height:22px;">
+                    <div id="locable_san_bar" style="background:#16a34a;height:100%;width:0%;transition:width 0.3s;border-radius:8px;"></div>
+                </div>
+                <p id="locable_san_label" style="font-size:13px;color:#166534;margin-top:6px;">Preparing…</p>
+            </div>
+
+            <!-- Sanitize result -->
+            <div id="locable_san_result" style="display:none;margin-top:16px;padding:14px;border-radius:6px;font-size:14px;"></div>
+        </div>
+
+        <!-- ═══════════════════════════════════════════════════════ -->
         <!-- DANGER ZONE: Delete All Businesses                     -->
         <!-- ═══════════════════════════════════════════════════════ -->
         <div id="locable_danger_zone" style="background:#fff5f5;border:2px solid #fca5a5;padding:24px;border-radius:8px;max-width:680px;margin-top:30px;">
@@ -1049,9 +1075,150 @@ function locable_csv_importer_page() {
             delResult.innerHTML = `✅ <strong>All businesses deleted.</strong> Removed <strong>${totalDeleted}</strong> listing${totalDeleted !== 1 ? 's' : ''} in total.`;
         });
 
+        // ── Sanitize All Listing Titles in Batches ─────────────────────────────
+        const sanBtn    = document.getElementById('locable_sanitize_all_btn');
+        const sanWrap   = document.getElementById('locable_san_progress_wrap');
+        const sanBar    = document.getElementById('locable_san_bar');
+        const sanLabel  = document.getElementById('locable_san_label');
+        const sanResult = document.getElementById('locable_san_result');
+
+        if (sanBtn) {
+            sanBtn.addEventListener('click', async () => {
+                if (!confirm('This will scan all business listings and sanitize any titles containing pipelines (|), keyword stuffing, or service repetition down to their real business name. Proceed?')) {
+                    return;
+                }
+
+                sanBtn.disabled = true;
+                sanWrap.style.display = 'block';
+                sanResult.style.display = 'none';
+                sanBar.style.width = '0%';
+                sanLabel.textContent = 'Starting title sanitization…';
+
+                let offset = 0;
+                let totalCleaned = 0;
+                let done = false;
+
+                while (!done) {
+                    try {
+                        const res = await fetch(ajaxUrl, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                            body: new URLSearchParams({
+                                action: 'locable_sanitize_titles',
+                                _nonce: nonce,
+                                offset: offset
+                            })
+                        });
+                        const json = await res.json();
+                        if (!json.success) { done = true; break; }
+
+                        totalCleaned += json.data.cleaned || 0;
+                        offset = json.data.processed || (offset + 100);
+                        done = json.data.done;
+
+                        const total = json.data.total || offset;
+                        const pct = total > 0 ? Math.min(100, Math.round(offset / total * 100)) : 100;
+                        sanBar.style.width = pct + '%';
+                        sanLabel.textContent = `Processed ${Math.min(offset, total)} of ${total} listings (Cleaned ${totalCleaned})…`;
+
+                        await new Promise(r => setTimeout(r, 60));
+                    } catch(e) {
+                        done = true;
+                    }
+                }
+
+                sanBar.style.width = '100%';
+                sanLabel.textContent = 'Complete!';
+                sanBtn.disabled = false;
+
+                sanResult.style.display = 'block';
+                sanResult.style.background = '#ecfdf5';
+                sanResult.style.border = '1px solid #6ee7b7';
+                sanResult.style.color = '#065f46';
+                sanResult.innerHTML = `✅ <strong>Sanitization Complete!</strong> Cleaned and updated <strong>${totalCleaned}</strong> business titles to actual business names.`;
+            });
+        }
+
     })();
     </script>
     <?php
+}
+
+/**
+ * Sanitize GMB / CSV business titles:
+ * Removes pipe keyword stuffing ("Name | Skin Tightening | Cryo..."), bullets, subtitle spam,
+ * and category repetition after dashes ("E Med Spa - Medical Spa in Rancho Bernardo" -> "E Med Spa").
+ * Preserves legitimate multi-location branch tags ("SDBotox - Pacific Beach").
+ */
+function locable_sanitize_business_title($raw_title, $category = '', $city = '') {
+    if (empty($raw_title)) return '';
+    $title = trim(html_entity_decode((string)$raw_title, ENT_QUOTES | ENT_HTML5, 'UTF-8'));
+
+    // 1. Remove pipes/pipelines and all keyword stuffing after the first pipe:
+    // e.g. "Skin Medical Spa in San Diego | Skin Tightening | Cryo Fat Freezing | Lipo Cavitation"
+    if (preg_match('/[|¦‖]/u', $title)) {
+        $parts = preg_split('/\s*[|¦‖]\s*/u', $title, -1, PREG_SPLIT_NO_EMPTY);
+        if (!empty($parts)) {
+            $title = trim($parts[0]);
+        }
+    }
+
+    // 2. Remove bullets: "Name • Keyword • Keyword"
+    if (preg_match('/[•·●▪]/u', $title)) {
+        $parts = preg_split('/\s*[•·●▪]\s*/u', $title, -1, PREG_SPLIT_NO_EMPTY);
+        if (!empty($parts)) {
+            $title = trim($parts[0]);
+        }
+    }
+
+    // 3. Remove double slashes: "Name // Keyword"
+    if (preg_match('/\s*\/\/\s*/', $title)) {
+        $parts = preg_split('/\s*\/\/\s*/', $title, -1, PREG_SPLIT_NO_EMPTY);
+        if (!empty($parts)) {
+            $title = trim($parts[0]);
+        }
+    }
+
+    // 4. Clean keyword stuffing after hyphens/dashes:
+    // e.g. "E Med Spa - Medical Spa in Rancho Bernardo"
+    if (preg_match('/^(.*?)\s+[-–—]\s+(.*?)$/u', $title, $dash_match)) {
+        $prefix = trim($dash_match[1]);
+        $suffix = trim($dash_match[2]);
+
+        $cat_lower = strtolower(trim((string)$category));
+        $suf_lower = strtolower($suffix);
+
+        $is_cat_spam = !empty($cat_lower) && (
+            strpos($suf_lower, $cat_lower) !== false ||
+            (strlen($cat_lower) > 4 && strpos($suf_lower, rtrim($cat_lower, 's')) !== false)
+        );
+
+        $is_marketing_spam = preg_match('/^(best|top|#1|rated|emergency|licensed|affordable|expert|specialist|specialists|services|service|official|premier)\b/i', $suffix)
+            || preg_match('/\b(near\s+me|24\/7|open\s+now|free\s+estimates?)\b/i', $suffix)
+            || preg_match('/\b(medical\s+spa|med\s+spa|plumbing|roofing|electrician|contractor|dentist|attorney|lawyer)\s+in\b/i', $suffix);
+
+        if ($is_cat_spam || $is_marketing_spam) {
+            $title = $prefix;
+        }
+    }
+
+    // 5. Remove colon subtitle spam: e.g. "ABC Dental: Cosmetic & Family Dentistry"
+    if (preg_match('/^(.*?):\s+(.*?)$/u', $title, $colon_match)) {
+        $prefix = trim($colon_match[1]);
+        $suffix = trim($colon_match[2]);
+        if (preg_match('/(dentistry|dentist|spa|plumbing|roofing|repair|services|best|#1|rated|emergency)/i', $suffix)) {
+            $title = $prefix;
+        }
+    }
+
+    // 6. Strip trailing location keyword spam like " in San Diego" or " in San Diego, CA" (only if preceded by "in")
+    $title = preg_replace('/\s+in\s+([A-Z][a-zA-Z\s]+)(,\s*[A-Z]{2})?$/i', '', $title);
+
+    // 7. Clean up whitespace and any trailing separator punctuation
+    $title = preg_replace('/\s+/u', ' ', $title);
+    $title = preg_replace('/[\s,:–|\\/-]+$/u', '', $title);
+
+    return trim($title);
 }
 
 // ─── 6. AJAX HANDLER – process one chunk of rows ─────────────────────────────
@@ -1076,8 +1243,13 @@ function locable_ajax_import_chunk() {
     $created = $updated = $skipped = $errors = 0;
 
     foreach ($rows as $row) {
-        $placeId = sanitize_text_field($row['placeId'] ?? '');
-        $title   = sanitize_text_field($row['title']   ?? '');
+        $placeId   = sanitize_text_field($row['placeId'] ?? '');
+        $raw_title = $row['title'] ?? '';
+        $type      = sanitize_text_field($row['type'] ?? '');
+        $city_name = sanitize_text_field($row['city'] ?? '');
+
+        // Automatically sanitize business title: cleans pipes, service keywords, and spam
+        $title     = locable_sanitize_business_title($raw_title, $type, $city_name);
 
         if (empty($placeId)) { $skipped++; continue; }
         if (empty($title))   { $title = 'Untitled Business'; }
@@ -1283,6 +1455,74 @@ function locable_ajax_sync_taxonomies() {
     wp_send_json_success(array(
         'processed' => $processed,
         'nextOffset' => $offset + $processed,
+        'done'      => count($posts) < $batch_size,
+        'total'     => $total,
+    ));
+}
+
+// ─── 9.1 AJAX: Batch Sanitize Business Titles ────────────────────────────────
+add_action('wp_ajax_locable_sanitize_titles', 'locable_ajax_sanitize_titles');
+
+function locable_ajax_sanitize_titles() {
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error(['message' => 'Unauthorized'], 403);
+    }
+    if (!isset($_POST['_nonce']) || !wp_verify_nonce($_POST['_nonce'], 'locable_csv_import_nonce')) {
+        wp_send_json_error(['message' => 'Nonce failed'], 403);
+    }
+
+    $offset = intval($_POST['offset'] ?? 0);
+    $batch_size = 100;
+
+    $posts = get_posts(array(
+        'post_type'      => 'business_listing',
+        'posts_per_page' => $batch_size,
+        'offset'         => $offset,
+        'post_status'    => 'any',
+        'orderby'        => 'ID',
+        'order'          => 'ASC',
+    ));
+
+    $cleaned = 0;
+    foreach ($posts as $p) {
+        $raw_title = $p->post_title;
+        $category  = get_post_meta($p->ID, 'type', true) ?: '';
+        $city      = get_post_meta($p->ID, 'city', true) ?: '';
+
+        $clean_title = locable_sanitize_business_title($raw_title, $category, $city);
+        $was_updated = false;
+
+        if (!empty($clean_title) && $clean_title !== $raw_title) {
+            wp_update_post(array(
+                'ID'         => $p->ID,
+                'post_title' => $clean_title,
+            ));
+            $was_updated = true;
+        }
+
+        $meta_title = get_post_meta($p->ID, 'title', true);
+        if (!empty($meta_title)) {
+            $clean_meta = locable_sanitize_business_title($meta_title, $category, $city);
+            if (!empty($clean_meta) && $clean_meta !== $meta_title) {
+                update_post_meta($p->ID, 'title', $clean_meta);
+                $was_updated = true;
+            }
+        } elseif ($was_updated) {
+            update_post_meta($p->ID, 'title', $clean_title);
+        }
+
+        if ($was_updated) {
+            $cleaned++;
+        }
+    }
+
+    $count = wp_count_posts('business_listing');
+    $total = 0;
+    foreach ((array)$count as $n) { $total += (int)$n; }
+
+    wp_send_json_success(array(
+        'cleaned'   => $cleaned,
+        'processed' => $offset + count($posts),
         'done'      => count($posts) < $batch_size,
         'total'     => $total,
     ));

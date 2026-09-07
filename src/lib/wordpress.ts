@@ -1015,6 +1015,95 @@ export function parseServiceOptions(val: unknown): string[] {
   return [];
 }
 
+/**
+ * Sanitize raw GMB / CSV business titles:
+ * Removes pipe keyword stuffing ("Name | Skin Tightening | Cryo..."), bullets, subtitle spam,
+ * and category repetition after dashes ("E Med Spa - Medical Spa in Rancho Bernardo" -> "E Med Spa").
+ * Preserves legitimate multi-location branch tags ("SDBotox - Pacific Beach").
+ */
+export function sanitizeBusinessTitle(rawTitle: string, category?: string, city?: string): string {
+  if (!rawTitle) return '';
+  let title = String(rawTitle).trim();
+
+  // 1. Decode HTML entities
+  title = title
+    .replace(/&amp;/g, '&')
+    .replace(/&#038;/g, '&')
+    .replace(/&#8211;/g, '–')
+    .replace(/&#8212;/g, '—')
+    .replace(/&quot;/g, '"')
+    .replace(/&#039;/g, "'")
+    .replace(/<[^>]*>/g, '');
+
+  // 2. Remove pipes/pipelines and all keyword stuffing after the first pipe:
+  // e.g. "Skin Medical Spa in San Diego | Skin Tightening | Cryo Fat Freezing | Lipo Cavitation"
+  if (/[|¦‖]/.test(title)) {
+    const parts = title.split(/\s*[|¦‖]\s*/).filter(Boolean);
+    if (parts.length > 0) {
+      title = parts[0].trim();
+    }
+  }
+
+  // 3. Remove bullets: "Name • Keyword • Keyword"
+  if (/[•·●▪]/.test(title)) {
+    const parts = title.split(/\s*[•·●▪]\s*/).filter(Boolean);
+    if (parts.length > 0) {
+      title = parts[0].trim();
+    }
+  }
+
+  // 4. Remove double slashes: "Name // Keyword"
+  if (/\s*\/\/\s*/.test(title)) {
+    const parts = title.split(/\s*\/\/\s*/).filter(Boolean);
+    if (parts.length > 0) {
+      title = parts[0].trim();
+    }
+  }
+
+  // 5. Clean keyword stuffing after hyphens/dashes:
+  // e.g. "E Med Spa - Medical Spa in Rancho Bernardo" -> "E Med Spa"
+  // but PRESERVE real branch/neighborhood identifiers: "SDBotox - Pacific Beach", "Revive Med Spa - Mission Valley"
+  const dashMatch = title.match(/^(.*?)\s+[-–—]\s+(.*?)$/);
+  if (dashMatch) {
+    const prefix = dashMatch[1].trim();
+    const suffix = dashMatch[2].trim();
+
+    const catLower = (category || '').toLowerCase().trim();
+    const sufLower = suffix.toLowerCase();
+
+    const isCategorySpam = catLower && (
+      sufLower.includes(catLower) ||
+      (catLower.length > 4 && sufLower.includes(catLower.replace(/s$/, '')))
+    );
+    const isMarketingSpam = /^(best|top|#1|rated|emergency|licensed|affordable|expert|specialist|specialists|services|service|official|premier)\b/i.test(suffix)
+      || /\b(near\s+me|24\/7|open\s+now|free\s+estimates?)\b/i.test(suffix)
+      || /\b(medical\s+spa|med\s+spa|plumbing|roofing|electrician|contractor|dentist|attorney|lawyer)\s+in\b/i.test(suffix);
+
+    if (isCategorySpam || isMarketingSpam) {
+      title = prefix;
+    }
+  }
+
+  // 6. Remove colon subtitle spam: e.g. "ABC Dental: Cosmetic & Family Dentistry"
+  const colonMatch = title.match(/^(.*?):\s+(.*?)$/);
+  if (colonMatch) {
+    const prefix = colonMatch[1].trim();
+    const suffix = colonMatch[2].trim();
+    if (/(dentistry|dentist|spa|plumbing|roofing|repair|services|best|#1|rated|emergency)/i.test(suffix)) {
+      title = prefix;
+    }
+  }
+
+  // 7. Strip trailing location keyword spam like " in San Diego" or " in San Diego, CA" (only if preceded by "in")
+  // e.g. "Skin Medical Spa in San Diego" -> "Skin Medical Spa"
+  title = title.replace(/\s+in\s+([A-Z][a-zA-Z\s]+)(,\s*[A-Z]{2})?$/i, '').trim();
+
+  // 8. Clean up whitespace and any trailing separator punctuation
+  title = title.replace(/\s+/g, ' ').replace(/[\s,:–|/-]+$/, '').trim();
+
+  return title;
+}
+
 function mapWpBusinessToFormat(item: Record<string, unknown>): BusinessListing {
   const meta = (item.meta as Record<string, unknown>) || {};
 
@@ -1027,9 +1116,9 @@ function mapWpBusinessToFormat(item: Record<string, unknown>): BusinessListing {
   }
 
   const rawTitle = (item.title as { rendered?: string })?.rendered || String(meta.title || 'Business');
-  const title = rawTitle.replace(/<[^>]*>/g, '').replace(/&#038;/g, '&').replace(/&amp;/g, '&').replace(/&#8211;/g, '–');
-
+  const type = String(meta.type || 'General');
   const city = String(meta.city || 'San Diego');
+  const title = sanitizeBusinessTitle(rawTitle, type, city);
   const placeIdStr = String(meta.placeId || item.id || '');
   const cleanCity = (city || '').toLowerCase().replace(/[^a-z0-9\s-]/g, '').trim().replace(/\s+/g, '-');
 
@@ -1079,7 +1168,6 @@ function mapWpBusinessToFormat(item: Record<string, unknown>): BusinessListing {
   const aliases = Array.from(aliasesSet).filter(a => a && a !== slug);
 
   const citySlug = String(meta.citySlug || city.toLowerCase().replace(/\s+/g, '-'));
-  const type = String(meta.type || 'General');
   const typeSlug = String(meta.typeSlug || type.toLowerCase().replace(/[\s&]+/g, '-').replace(/[^a-z0-9-]/g, ''));
 
   const rawAddress = String(meta.address || '');
