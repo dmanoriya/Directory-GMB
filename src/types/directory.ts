@@ -137,6 +137,7 @@ export interface BlogPost {
   category: string;
   readTime: string;
   coverImage: string;
+  image?: string;
 }
 
 export interface SiteBranding {

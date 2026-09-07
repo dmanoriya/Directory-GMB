@@ -430,6 +430,12 @@ function locable_maps_settings_page() {
             update_option('locable_ai_api_key',        sanitize_text_field($_POST['locable_ai_api_key']));
         }
         update_option('locable_ai_model',              sanitize_text_field($_POST['locable_ai_model'] ?? ''));
+        if (isset($_POST['locable_frontend_url'])) {
+            update_option('locable_frontend_url',      esc_url_raw($_POST['locable_frontend_url']));
+        }
+
+        // Instant Zero-Delay cache invalidation
+        locable_invalidate_frontend_cache();
 
         $message = "<div class='notice notice-success is-dismissible'><p><strong>🎉 Settings, Hero Collage, AI Configuration, Logo, Favicon &amp; SEO updated and synced with Next.js frontend!</strong></p></div>";
     }
@@ -4056,3 +4062,54 @@ add_filter('rest_post_dispatch', function($response) {
     }
     return $response;
 }, 999);
+
+// ── Zero-Delay Next.js Frontend Invalidation Webhook ──
+function locable_invalidate_frontend_cache() {
+    static $already_fired = false;
+    if ($already_fired) {
+        return;
+    }
+    $already_fired = true;
+
+    $targets = array(
+        'http://localhost:3000/api/cache/clear',
+        'http://127.0.0.1:3000/api/cache/clear',
+    );
+
+    $frontend_url = get_option('locable_frontend_url', '');
+    if (!empty($frontend_url)) {
+        $targets[] = rtrim($frontend_url, '/') . '/api/cache/clear';
+    }
+    $targets[] = 'https://sandiegobusinesscircle.com/api/cache/clear';
+
+    $targets = array_unique(array_filter($targets));
+
+    foreach ($targets as $url) {
+        wp_remote_get($url, array(
+            'timeout'   => 1,
+            'blocking'  => false,
+            'sslverify' => false,
+            'headers'   => array(
+                'User-Agent' => 'Locable-WordPress-Sync/1.0',
+            ),
+        ));
+    }
+}
+
+// Hook into post saves, Rank Math SEO updates, deletions, and status changes
+add_action('save_post_business_listing', 'locable_invalidate_frontend_cache', 30);
+add_action('save_post_post', 'locable_invalidate_frontend_cache', 30);
+add_action('deleted_post', 'locable_invalidate_frontend_cache', 20);
+add_action('trash_business_listing', 'locable_invalidate_frontend_cache', 20);
+add_action('untrashed_post', 'locable_invalidate_frontend_cache', 20);
+add_action('transition_post_status', function($new_status, $old_status, $post) {
+    if ($post && in_array($post->post_type, array('business_listing', 'post', 'page'))) {
+        if ($new_status !== $old_status) {
+            locable_invalidate_frontend_cache();
+        }
+    }
+}, 20, 3);
+
+// Rank Math specific hook whenever Rank Math SEO details are updated
+add_action('rank_math/seo_details_saved', 'locable_invalidate_frontend_cache', 20);
+

@@ -1,6 +1,7 @@
 import { cache } from 'react';
 import { MOCK_CATEGORIES, MOCK_CITIES, MOCK_REVIEWS, MOCK_BLOG_POSTS } from '@/data/mockData';
 import { BusinessListing, BusinessReview, Category, LocationCity, BlogPost, LeadSubmission, SiteBranding } from '@/types/directory';
+import { clearRankMathCache } from './rankMath';
 
 /**
  * Get WordPress REST API base URL.
@@ -80,7 +81,14 @@ export async function testWpConnection(url?: string): Promise<{ success: boolean
   }
 }
 
-let listingsCache: { data: BusinessListing[]; timestamp: number } | null = null;
+interface ListingsCacheStore {
+  data: BusinessListing[];
+  timestamp: number;
+  lastModifiedGmt: string;
+  total: number;
+}
+
+let listingsCache: ListingsCacheStore | null = null;
 let categoriesCache: { data: Category[]; timestamp: number } | null = null;
 let citiesCache: { data: LocationCity[]; timestamp: number } | null = null;
 let activeListingsPromise: Promise<BusinessListing[]> | null = null;
@@ -92,6 +100,7 @@ export function clearListingsCache(): void {
   categoriesCache = null;
   citiesCache = null;
   activeListingsPromise = null;
+  clearRankMathCache();
 }
 
 /**
@@ -151,54 +160,62 @@ export async function getSiteBranding(): Promise<SiteBranding> {
   return defaultBranding;
 }
 
-async function getWpTotalListingsCount(apiUrl: string): Promise<number | null> {
+async function getWpListingStatus(apiUrl: string): Promise<{ total: number; latestModifiedGmt: string } | null> {
   try {
-    const res = await fetch(`${apiUrl}/wp-json/wp/v2/business_listing?per_page=1&_fields=id&_t=${Date.now()}`, {
-      method: 'GET',
-      cache: 'no-store',
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) LocableNextJS/1.0',
-        'Cache-Control': 'no-cache, no-store, must-revalidate',
-        'Pragma': 'no-cache',
-      },
-      signal: AbortSignal.timeout(3000),
-    });
+    const res = await fetch(
+      `${apiUrl}/wp-json/wp/v2/business_listing?per_page=1&orderby=modified&order=desc&_fields=id,modified_gmt&_t=${Date.now()}`,
+      {
+        method: 'GET',
+        cache: 'no-store',
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) LocableNextJS/1.0',
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache',
+        },
+        signal: AbortSignal.timeout(3000),
+      }
+    );
     if (res.ok) {
       const totalHeader = res.headers.get('X-WP-Total');
-      if (totalHeader !== null) {
-        return parseInt(totalHeader, 10);
-      }
+      const total = totalHeader !== null ? parseInt(totalHeader, 10) : 0;
+      const data = await res.json();
+      const latestModifiedGmt = Array.isArray(data) && data.length > 0 && data[0].modified_gmt ? String(data[0].modified_gmt) : '';
+      return { total, latestModifiedGmt };
     }
   } catch (e) {}
   return null;
 }
 
 /**
- * Fetch ALL business listings from WordPress REST API with auto-pagination and promise deduplication.
+ * Fetch ALL business listings from WordPress REST API with auto-pagination,
+ * zero-delay modification checking, and promise deduplication.
  */
 async function fetchAllFromWp(): Promise<BusinessListing[]> {
   const now = Date.now();
   const apiUrl = getWpApiUrl();
 
-  // 1. If listings are cached, verify with WordPress via a fast 40ms lightweight count check
-  if (listingsCache && (now - listingsCache.timestamp < 5000)) {
-    // Within 5 seconds of last check, return immediately without network overhead
-    return listingsCache.data;
-  }
-
+  // 1. If listings are cached, verify with WordPress via a fast ~15ms modified timestamp and total count check
   if (listingsCache && apiUrl) {
-    const currentWpTotal = await getWpTotalListingsCount(apiUrl);
-    if (currentWpTotal === 0) {
-      console.log('[WordPress] Total listings is 0 in WordPress. Clearing cache.');
-      listingsCache = { data: [], timestamp: now };
-      return [];
-    }
-    if (currentWpTotal !== null && currentWpTotal !== listingsCache.data.length) {
-      console.log(`[WordPress] Total count changed (WP: ${currentWpTotal}, Cache: ${listingsCache.data.length}). Refetching.`);
-      listingsCache = null;
-    } else if (currentWpTotal !== null) {
-      // Total count matches, update timestamp and return fast cache
-      listingsCache.timestamp = now;
+    const wpStatus = await getWpListingStatus(apiUrl);
+    if (wpStatus) {
+      if (wpStatus.total === 0) {
+        console.log('[WordPress] Total listings is 0 in WordPress. Clearing cache.');
+        listingsCache = { data: [], timestamp: now, lastModifiedGmt: '', total: 0 };
+        return [];
+      }
+      if (
+        wpStatus.total !== listingsCache.data.length ||
+        (wpStatus.latestModifiedGmt && listingsCache.lastModifiedGmt && wpStatus.latestModifiedGmt !== listingsCache.lastModifiedGmt)
+      ) {
+        console.log(`[WordPress] Detected change in WordPress (Total: WP ${wpStatus.total} vs Cache ${listingsCache.data.length}, Mod: WP ${wpStatus.latestModifiedGmt} vs Cache ${listingsCache.lastModifiedGmt}). Invalidating cache immediately.`);
+        listingsCache = null;
+      } else {
+        // Total and modification timestamp both match! Cache is 100% up to date.
+        listingsCache.timestamp = now;
+        return listingsCache.data;
+      }
+    } else if (now - listingsCache.timestamp < 3000) {
+      // If status check timed out but cache is under 3s old, return fast cache
       return listingsCache.data;
     }
   }
@@ -210,7 +227,6 @@ async function fetchAllFromWp(): Promise<BusinessListing[]> {
   activeListingsPromise = (async () => {
     try {
       const freshData = await fetchWpListingsDirectly();
-      listingsCache = { data: freshData, timestamp: Date.now() };
       return freshData;
     } finally {
       activeListingsPromise = null;
@@ -227,7 +243,7 @@ async function fetchWpListingsDirectly(): Promise<BusinessListing[]> {
 
   try {
     const firstRes = await fetch(
-      `${apiUrl}/wp-json/wp/v2/business_listing?per_page=100&page=1&orderby=date&order=desc&_fields=id,slug,title,meta&_t=${now}`,
+      `${apiUrl}/wp-json/wp/v2/business_listing?per_page=100&page=1&orderby=modified&order=desc&_fields=id,slug,title,meta,modified_gmt&_t=${now}`,
       {
         cache: 'no-store',
         headers: {
@@ -256,16 +272,20 @@ async function fetchWpListingsDirectly(): Promise<BusinessListing[]> {
 
     if (!Array.isArray(firstPage) || firstPage.length === 0 || total === 0) {
       console.log('[WordPress] 0 business listings found in WordPress.');
-      listingsCache = { data: [], timestamp: now };
+      listingsCache = { data: [], timestamp: now, lastModifiedGmt: '', total: 0 };
       return [];
     }
+
+    const latestModifiedGmt = (Array.isArray(firstPage) && firstPage.length > 0 && firstPage[0].modified_gmt)
+      ? String(firstPage[0].modified_gmt)
+      : '';
 
     let allPosts = [...firstPage];
 
     // Seed cache immediately with the first 100 listings so callers get fast responses
     const initialMapped = allPosts.map(mapWpBusinessToFormat);
     if (!listingsCache || listingsCache.data.length === 0) {
-      listingsCache = { data: initialMapped, timestamp: now };
+      listingsCache = { data: initialMapped, timestamp: now, lastModifiedGmt: latestModifiedGmt, total };
     }
 
     if (totalPages > 1) {
@@ -275,7 +295,7 @@ async function fetchWpListingsDirectly(): Promise<BusinessListing[]> {
         for (let page = i; page < Math.min(i + BATCH_SIZE, totalPages + 1); page++) {
           batchPromises.push(
             fetch(
-              `${apiUrl}/wp-json/wp/v2/business_listing?per_page=100&page=${page}&orderby=date&order=desc&_fields=id,slug,title,meta&_t=${now}`,
+              `${apiUrl}/wp-json/wp/v2/business_listing?per_page=100&page=${page}&orderby=modified&order=desc&_fields=id,slug,title,meta,modified_gmt&_t=${now}`,
               {
                 cache: 'no-store',
                 headers: {
@@ -289,7 +309,7 @@ async function fetchWpListingsDirectly(): Promise<BusinessListing[]> {
               if (r.ok) return r.json();
               await new Promise((res) => setTimeout(res, 200));
               const retry = await fetch(
-                `${apiUrl}/wp-json/wp/v2/business_listing?per_page=100&page=${page}&orderby=date&order=desc&_fields=id,slug,title,meta&_t=${now}`,
+                `${apiUrl}/wp-json/wp/v2/business_listing?per_page=100&page=${page}&orderby=modified&order=desc&_fields=id,slug,title,meta,modified_gmt&_t=${now}`,
                 {
                   cache: 'no-store',
                   headers: {
@@ -308,7 +328,7 @@ async function fetchWpListingsDirectly(): Promise<BusinessListing[]> {
           if (Array.isArray(batch)) allPosts = allPosts.concat(batch);
         }
         // Update incremental cache
-        listingsCache = { data: allPosts.map(mapWpBusinessToFormat), timestamp: now };
+        listingsCache = { data: allPosts.map(mapWpBusinessToFormat), timestamp: now, lastModifiedGmt: latestModifiedGmt, total };
         // Gentle delay to avoid choking local PHP-FPM
         await new Promise((r) => setTimeout(r, 60));
       }
@@ -316,7 +336,7 @@ async function fetchWpListingsDirectly(): Promise<BusinessListing[]> {
 
     console.log(`[WordPress] Successfully fetched ${allPosts.length} of ${total} total business listings.`);
     const mapped = allPosts.map(mapWpBusinessToFormat);
-    listingsCache = { data: mapped, timestamp: now };
+    listingsCache = { data: mapped, timestamp: now, lastModifiedGmt: latestModifiedGmt, total };
     return mapped;
   } catch (error) {
     console.warn('[WordPress] Network error fetching listings:', error);
@@ -448,22 +468,26 @@ export const getBusinessBySlug = cache(async (slugOrPlaceId: string): Promise<Bu
   const target = (slugOrPlaceId || '').toLowerCase().trim();
   if (!target) return null;
 
-  // Check 1: In-memory cache hit with phased precision
-  if (listingsCache && listingsCache.data.length > 0) {
-    const cachedMatch = findBusinessInList(listingsCache.data, target);
-    if (cachedMatch) return cachedMatch;
-  }
+  // 1. Ensure full dataset is up to date (checks WordPress modified status in ~15ms)
+  const allListings = await fetchAllFromWp();
+  const cachedMatch = findBusinessInList(allListings, target);
+  if (cachedMatch) return cachedMatch;
 
   const apiUrl = getWpApiUrl();
 
-  // Check 2: Direct queries to WordPress REST API
+  // 2. Direct queries to WordPress REST API with cache: 'no-store'
   if (apiUrl) {
     // 2a. Direct slug lookup
     try {
       const res = await fetch(
-        `${apiUrl}/wp-json/wp/v2/business_listing?slug=${encodeURIComponent(slugOrPlaceId)}&_fields=id,slug,title,meta&_t=${Date.now()}`,
+        `${apiUrl}/wp-json/wp/v2/business_listing?slug=${encodeURIComponent(slugOrPlaceId)}&_fields=id,slug,title,meta,modified_gmt&_t=${Date.now()}`,
         {
-          headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) LocableNextJS/1.0' },
+          cache: 'no-store',
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) LocableNextJS/1.0',
+            'Cache-Control': 'no-cache, no-store, must-revalidate',
+            'Pragma': 'no-cache',
+          },
           signal: AbortSignal.timeout(5000),
         }
       );
@@ -484,9 +508,14 @@ export const getBusinessBySlug = cache(async (slugOrPlaceId: string): Promise<Bu
     if (baseSlug !== slugOrPlaceId) {
       try {
         const resBase = await fetch(
-          `${apiUrl}/wp-json/wp/v2/business_listing?slug=${encodeURIComponent(baseSlug)}&_fields=id,slug,title,meta&_t=${Date.now()}`,
+          `${apiUrl}/wp-json/wp/v2/business_listing?slug=${encodeURIComponent(baseSlug)}&_fields=id,slug,title,meta,modified_gmt&_t=${Date.now()}`,
           {
-            headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) LocableNextJS/1.0' },
+            cache: 'no-store',
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) LocableNextJS/1.0',
+              'Cache-Control': 'no-cache, no-store, must-revalidate',
+              'Pragma': 'no-cache',
+            },
             signal: AbortSignal.timeout(5000),
           }
         );
@@ -505,9 +534,14 @@ export const getBusinessBySlug = cache(async (slugOrPlaceId: string): Promise<Bu
     try {
       const cleanSearch = slugOrPlaceId.replace(/-/g, ' ').replace(/[0-9]+/g, '').trim();
       const resSearch = await fetch(
-        `${apiUrl}/wp-json/wp/v2/business_listing?search=${encodeURIComponent(cleanSearch)}&per_page=15&_fields=id,slug,title,meta&_t=${Date.now()}`,
+        `${apiUrl}/wp-json/wp/v2/business_listing?search=${encodeURIComponent(cleanSearch)}&per_page=15&_fields=id,slug,title,meta,modified_gmt&_t=${Date.now()}`,
         {
-          headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) LocableNextJS/1.0' },
+          cache: 'no-store',
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) LocableNextJS/1.0',
+            'Cache-Control': 'no-cache, no-store, must-revalidate',
+            'Pragma': 'no-cache',
+          },
           signal: AbortSignal.timeout(5000),
         }
       );
@@ -522,9 +556,7 @@ export const getBusinessBySlug = cache(async (slugOrPlaceId: string): Promise<Bu
     } catch (e) {}
   }
 
-  // Check 3: Full dataset search with phased matching
-  const all = await getBusinesses();
-  return findBusinessInList(all, target);
+  return null;
 });
 
 /**

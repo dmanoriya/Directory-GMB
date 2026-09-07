@@ -1,17 +1,56 @@
 import React from 'react';
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
+import { Metadata } from 'next';
 import { 
   ArrowLeft, Clock, Calendar, User, Home, ChevronRight, 
   Share2, BookOpen, Sparkles, Building2, Layers, Tag
 } from 'lucide-react';
-import { getBlogPostBySlug, getBlogPosts } from '@/lib/wordpress';
+import { getBlogPostBySlug, getBlogPosts, getWpApiUrl } from '@/lib/wordpress';
+import { getRankMathMetadata } from '@/lib/rankMath';
+import RankMathSchema from '@/components/RankMathSchema';
 import BusinessCard from '@/components/BusinessCard';
 
 export const dynamic = 'force-dynamic';
 
 interface BlogDetailProps {
   params: Promise<{ slug: string }>;
+}
+
+export async function generateMetadata({ params }: BlogDetailProps): Promise<Metadata> {
+  const { slug } = await params;
+  const post = await getBlogPostBySlug(slug);
+  if (!post) return { title: 'Article Not Found | San Diego Business Circle Blog' };
+
+  const wpApiUrl = getWpApiUrl();
+  const defaultMeta: Metadata = {
+    title: `${post.title} | San Diego Business Circle Blog`,
+    description: post.excerpt || `${post.title} - Read the latest San Diego local business insights, consumer guides, and expert advice.`,
+    alternates: {
+      canonical: `https://sandiegobusinesscircle.com/blog/${post.slug}`,
+    },
+    openGraph: {
+      title: `${post.title} | San Diego Business Circle Blog`,
+      description: post.excerpt || post.title,
+      url: `https://sandiegobusinesscircle.com/blog/${post.slug}`,
+      type: 'article',
+      images: [post.coverImage || 'https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?w=1200&h=630&fit=crop&q=80'],
+    },
+    twitter: {
+      card: 'summary_large_image',
+      title: post.title,
+      description: post.excerpt || post.title,
+      images: [post.coverImage || 'https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?w=1200&h=630&fit=crop&q=80'],
+    }
+  };
+
+  const rm = await getRankMathMetadata({
+    wpUrl: `${wpApiUrl}/${post.slug}/`,
+    fallbackMetadata: defaultMeta,
+    fallbackCanonicalPath: `/blog/${post.slug}`,
+  });
+
+  return rm.metadata;
 }
 
 export default async function BlogDetailPage({ params }: BlogDetailProps) {
@@ -32,8 +71,20 @@ export default async function BlogDetailPage({ params }: BlogDetailProps) {
     ? relatedPosts
     : allPosts.filter(p => p.id !== post.id).slice(0, 3);
 
+  let rankMathSchemas: string[] = [];
+  try {
+    const wpApiUrl = getWpApiUrl();
+    const rm = await getRankMathMetadata({
+      wpUrl: `${wpApiUrl}/${post.slug}/`,
+      fallbackMetadata: {},
+      fallbackCanonicalPath: `/blog/${post.slug}`,
+    });
+    rankMathSchemas = rm.jsonLdSchemas;
+  } catch (e) {}
+
   return (
     <div style={{ background: '#ffffff', minHeight: '100vh', paddingBottom: '6rem' }}>
+      <RankMathSchema schemas={rankMathSchemas} />
       
       {/* REDESIGNED EDITORIAL WARM CANVAS HERO */}
       <section style={{

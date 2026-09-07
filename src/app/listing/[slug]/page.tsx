@@ -15,14 +15,15 @@ import {
   Share2,
   UserCheck
 } from 'lucide-react';
-import { getBusinessBySlug, getBusinesses, getReviewsForBusiness, parseServiceOptions } from '@/lib/wordpress';
+import { getBusinessBySlug, getBusinesses, getReviewsForBusiness, parseServiceOptions, getWpApiUrl } from '@/lib/wordpress';
 import { getListingAboutParagraphs, getListingMetaSnippet, generateLocalBusinessSchema } from '@/lib/seoContent';
+import { getRankMathMetadata } from '@/lib/rankMath';
+import RankMathSchema from '@/components/RankMathSchema';
 import ReviewsSection from '@/components/ReviewsSection';
 import BusinessCard from '@/components/BusinessCard';
 import SafeImage from '@/components/SafeImage';
 import BusinessHeroHeader from '@/components/BusinessHeroHeader';
 import SuggestEditTriggerCard from '@/components/SuggestEditTriggerCard';
-
 
 interface ListingPageProps {
   params: Promise<{
@@ -39,8 +40,11 @@ export async function generateMetadata({ params }: ListingPageProps) {
   if (!business) return { title: 'Business Not Found | San Diego Directory' };
 
   const metaSnippet = getListingMetaSnippet(business);
+  const wpApiUrl = getWpApiUrl();
+  const wpSlug = (business as any).wpSlug || business.slug;
+  const rankMathWpUrl = `${wpApiUrl}/business_listing/${wpSlug}/`;
 
-  return {
+  const defaultMeta = {
     title: `${business.title} | ${business.city}, CA | San Diego Directory`,
     description: metaSnippet,
     alternates: {
@@ -51,8 +55,22 @@ export async function generateMetadata({ params }: ListingPageProps) {
       description: metaSnippet,
       images: [business.thumbnail || business.coverImage || ''],
       url: `https://sandiegobusinesscircle.com/listing/${business.slug}`,
-    }
+    },
+    twitter: {
+      card: 'summary_large_image' as const,
+      title: `${business.title} | ${business.city}, CA`,
+      description: metaSnippet,
+      images: [business.thumbnail || business.coverImage || ''],
+    },
   };
+
+  const rm = await getRankMathMetadata({
+    wpUrl: rankMathWpUrl,
+    fallbackMetadata: defaultMeta,
+    fallbackCanonicalPath: `/listing/${business.slug}`,
+  });
+
+  return rm.metadata;
 }
 
 export default async function ListingDetailPage({ params }: ListingPageProps) {
@@ -126,6 +144,18 @@ export default async function ListingDetailPage({ params }: ListingPageProps) {
     }
   };
 
+  let rankMathSchemas: string[] = [];
+  try {
+    const wpApiUrl = getWpApiUrl();
+    const wpSlug = (business as any).wpSlug || business.slug;
+    const rm = await getRankMathMetadata({
+      wpUrl: `${wpApiUrl}/business_listing/${wpSlug}/`,
+      fallbackMetadata: {},
+      fallbackCanonicalPath: `/listing/${business.slug}`,
+    });
+    rankMathSchemas = rm.jsonLdSchemas;
+  } catch (e) {}
+
   return (
     <div style={{ paddingBottom: '6rem' }}>
       
@@ -134,6 +164,7 @@ export default async function ListingDetailPage({ params }: ListingPageProps) {
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(schemaJsonLd) }}
       />
+      <RankMathSchema schemas={rankMathSchemas} />
 
       {/* COVER HERO */}
       <div style={{ position: 'relative', height: '320px', width: '100%', background: '#0f172a' }}>

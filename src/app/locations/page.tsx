@@ -1,15 +1,63 @@
 import React from 'react';
+import type { Metadata } from 'next';
 import Link from 'next/link';
 import { Home, ChevronRight, MapPin, ArrowRight, ShieldCheck } from 'lucide-react';
-import { getCities } from '@/lib/wordpress';
+import { getCities, getWpApiUrl } from '@/lib/wordpress';
+import { getRankMathMetadata } from '@/lib/rankMath';
+import RankMathSchema from '@/components/RankMathSchema';
 
 export const dynamic = 'force-dynamic';
 
+export async function generateMetadata(): Promise<Metadata> {
+  const wpApiUrl = getWpApiUrl();
+
+  const defaultMeta: Metadata = {
+    title: 'San Diego County Cities & Neighborhood Locations | San Diego Business Circle',
+    description: 'Explore verified local businesses, top-rated contractors, medical spas, and local services across all cities in San Diego County including La Jolla, Chula Vista, Carlsbad, Oceanside, and Coronado.',
+    alternates: {
+      canonical: 'https://sandiegobusinesscircle.com/locations',
+    },
+    openGraph: {
+      title: 'San Diego County Cities & Neighborhood Locations | San Diego Business Circle',
+      description: 'Explore verified local businesses across all cities and neighborhoods in San Diego County.',
+      url: 'https://sandiegobusinesscircle.com/locations',
+      type: 'website',
+      images: ['https://images.unsplash.com/photo-1570172619644-dfd03ed5d881?w=1200&h=630&fit=crop&q=80'],
+    },
+    twitter: {
+      card: 'summary_large_image',
+      title: 'San Diego County Cities & Neighborhood Locations',
+      description: 'Explore verified local businesses across San Diego County.',
+      images: ['https://images.unsplash.com/photo-1570172619644-dfd03ed5d881?w=1200&h=630&fit=crop&q=80'],
+    }
+  };
+
+  const rm = await getRankMathMetadata({
+    wpUrl: `${wpApiUrl}/locations/`,
+    fallbackMetadata: defaultMeta,
+    fallbackCanonicalPath: '/locations',
+  });
+
+  return rm.metadata;
+}
+
 export default async function AllLocationsPage() {
   const dynamicCities = await getCities();
+  const wpApiUrl = getWpApiUrl();
+
+  let rankMathSchemas: string[] = [];
+  try {
+    const rm = await getRankMathMetadata({
+      wpUrl: `${wpApiUrl}/locations/`,
+      fallbackMetadata: {},
+      fallbackCanonicalPath: '/locations',
+    });
+    rankMathSchemas = rm.jsonLdSchemas;
+  } catch (e) {}
 
   return (
     <div style={{ background: '#ffffff', minHeight: '100vh', paddingBottom: '5rem' }}>
+      <RankMathSchema schemas={rankMathSchemas} />
       
       {/* REDESIGNED ULTRA-MODERN LOCATIONS HERO */}
       <section style={{ 

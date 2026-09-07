@@ -1,16 +1,64 @@
 import React from 'react';
+import type { Metadata } from 'next';
 import Link from 'next/link';
 import { Home, ChevronRight, Grid } from 'lucide-react';
-import { getCategories } from '@/lib/wordpress';
+import { getCategories, getWpApiUrl } from '@/lib/wordpress';
+import { getRankMathMetadata } from '@/lib/rankMath';
+import RankMathSchema from '@/components/RankMathSchema';
 import CategoriesHub from '@/components/CategoriesHub';
 
 export const dynamic = 'force-dynamic';
 
+export async function generateMetadata(): Promise<Metadata> {
+  const wpApiUrl = getWpApiUrl();
+
+  const defaultMeta: Metadata = {
+    title: 'Business Categories & Industry Directory | San Diego Business Circle',
+    description: 'Browse all local business categories in San Diego including medical spas, general contractors, plumbers, roofers, dentists, legal services, and home improvement experts.',
+    alternates: {
+      canonical: 'https://sandiegobusinesscircle.com/categories',
+    },
+    openGraph: {
+      title: 'Business Categories & Industry Directory | San Diego Business Circle',
+      description: 'Browse all local business categories in San Diego including medical spas, contractors, plumbers, and home services.',
+      url: 'https://sandiegobusinesscircle.com/categories',
+      type: 'website',
+      images: ['https://images.unsplash.com/photo-1570172619644-dfd03ed5d881?w=1200&h=630&fit=crop&q=80'],
+    },
+    twitter: {
+      card: 'summary_large_image',
+      title: 'Business Categories & Industry Directory | San Diego Business Circle',
+      description: 'Browse all local business categories in San Diego.',
+      images: ['https://images.unsplash.com/photo-1570172619644-dfd03ed5d881?w=1200&h=630&fit=crop&q=80'],
+    }
+  };
+
+  const rm = await getRankMathMetadata({
+    wpUrl: `${wpApiUrl}/categories/`,
+    fallbackMetadata: defaultMeta,
+    fallbackCanonicalPath: '/categories',
+  });
+
+  return rm.metadata;
+}
+
 export default async function AllCategoriesPage() {
   const dynamicCategories = await getCategories();
+  const wpApiUrl = getWpApiUrl();
+
+  let rankMathSchemas: string[] = [];
+  try {
+    const rm = await getRankMathMetadata({
+      wpUrl: `${wpApiUrl}/categories/`,
+      fallbackMetadata: {},
+      fallbackCanonicalPath: '/categories',
+    });
+    rankMathSchemas = rm.jsonLdSchemas;
+  } catch (e) {}
 
   return (
     <div style={{ background: '#ffffff', minHeight: '100vh', paddingBottom: '5rem' }}>
+      <RankMathSchema schemas={rankMathSchemas} />
       
       {/* REDESIGNED ULTRA-MODERN CATEGORIES HERO */}
       <section style={{ 
