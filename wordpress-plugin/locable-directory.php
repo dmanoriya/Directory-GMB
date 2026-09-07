@@ -1573,15 +1573,15 @@ function locable_ajax_import_chunk() {
             wp_set_object_terms($post_id, $meta_fields['type'], 'business_type', false);
         }
         
-        $city = $meta_fields['city'];
+        $city = locable_clean_city_name($meta_fields['city']);
         if (empty($city) && !empty($meta_fields['address'])) {
             if (preg_match('/,\s*([^,]+),\s*[A-Z]{2}/i', $meta_fields['address'], $m)) {
-                $city = trim($m[1]);
-                update_post_meta($post_id, 'city', $city);
-                update_post_meta($post_id, 'citySlug', sanitize_title($city));
+                $city = locable_clean_city_name(trim($m[1]));
             }
         }
         if (!empty($city)) {
+            update_post_meta($post_id, 'city', $city);
+            update_post_meta($post_id, 'citySlug', sanitize_title($city));
             wp_set_object_terms($post_id, $city, 'business_location', false);
         }
     }
@@ -1675,7 +1675,7 @@ function locable_ajax_sync_taxonomies() {
     $processed = 0;
     foreach ($posts as $id) {
         $type = get_post_meta($id, 'type', true);
-        $city = get_post_meta($id, 'city', true);
+        $city = locable_clean_city_name(get_post_meta($id, 'city', true));
 
         if (!empty($type)) {
             wp_set_object_terms($id, $type, 'business_type', false);
@@ -3317,7 +3317,10 @@ function locable_rest_submit_listing($request) {
     update_post_meta($post_id, 'verified', 'false');
 
     wp_set_object_terms($post_id, $type, 'business_type', false);
-    wp_set_object_terms($post_id, $city, 'business_location', false);
+    $clean_city = locable_clean_city_name($city);
+    if (!empty($clean_city)) {
+        wp_set_object_terms($post_id, $clean_city, 'business_location', false);
+    }
 
     // Initial Welcome Review
     wp_insert_post(array(
@@ -3777,10 +3780,15 @@ function locable_save_business_fields_meta($post_id, $post) {
     }
 
     if (isset($_POST['locable_meta_city'])) {
-        $city = sanitize_text_field($_POST['locable_meta_city']);
+        $raw_city = sanitize_text_field($_POST['locable_meta_city']);
+        $city = locable_clean_city_name($raw_city);
+        if (empty($city)) $city = $raw_city;
         update_post_meta($post_id, 'city', $city);
         update_post_meta($post_id, 'citySlug', sanitize_title($city));
-        wp_set_object_terms($post_id, $city, 'business_location', false);
+        $tax_city = locable_clean_city_name($city);
+        if (!empty($tax_city)) {
+            wp_set_object_terms($post_id, $tax_city, 'business_location', false);
+        }
     }
 
     if (isset($_POST['locable_meta_address'])) {
@@ -4007,6 +4015,45 @@ add_action('rest_api_init', function() {
     ));
 });
 
+function locable_clean_city_name($city = '') {
+    if (empty($city) || !is_string($city)) return '';
+    $city = trim($city);
+
+    // If city looks like an address, unit, room or suite
+    if (preg_match('/^#|^\d|\b(ste|suite|unit|apt|apartment|floor|fl|room|rm|space|spc|box|mailbox)\b/i', $city)) {
+        if (strpos($city, ',') !== false) {
+            $parts = array_map('trim', explode(',', $city));
+            if (count($parts) >= 2) {
+                $candidate = preg_replace('/\b(ca|california|\d{5})\b/i', '', $parts[1]);
+                $candidate = trim($candidate);
+                if (!empty($candidate) && !preg_match('/^#|^\d|\b(ste|suite|unit|ave|st|rd|blvd|dr)\b/i', $candidate)) {
+                    return $candidate;
+                }
+            }
+        }
+        return '';
+    }
+
+    // If city contains street identifiers
+    if (preg_match('/\b(ave|avenue|st|street|blvd|boulevard|rd|road|dr|drive|pkwy|parkway|pl|place|way|ct|court|hwy|highway|camino)\b/i', $city)) {
+        if (strpos($city, ',') !== false) {
+            $parts = array_map('trim', explode(',', $city));
+            if (count($parts) >= 2) {
+                $candidate = preg_replace('/\b(ca|california|\d{5})\b/i', '', $parts[1]);
+                $candidate = trim($candidate);
+                if (!empty($candidate) && !preg_match('/^#|^\d|\b(ste|suite|unit|ave|st|rd|blvd|dr)\b/i', $candidate)) {
+                    return $candidate;
+                }
+            }
+        }
+        return '';
+    }
+
+    // Strip trailing state or zip e.g. "San Diego, CA 92101" -> "San Diego"
+    $city = preg_replace('/,?\s*\b(ca|california|\d{5})\b.*/i', '', $city);
+    return trim($city);
+}
+
 function locable_detect_state_from_meta($state = '', $city = '', $address = '') {
     $clean_state = trim($state);
     if (!empty($clean_state)) {
@@ -4034,15 +4081,19 @@ function locable_detect_state_from_meta($state = '', $city = '', $address = '') 
 
 // ── Headless REST API CORS & Zero-Cache Headers ──
 add_action('rest_api_init', function() {
-    header('Cache-Control: no-cache, no-store, must-revalidate, max-age=0, s-maxage=0');
-    header('Pragma: no-cache');
-    header('Expires: 0');
-    header('X-Accel-Expires: 0');
+    if (!headers_sent()) {
+        header('Cache-Control: no-cache, no-store, must-revalidate, max-age=0, s-maxage=0');
+        header('Pragma: no-cache');
+        header('Expires: 0');
+        header('X-Accel-Expires: 0');
+    }
 
     remove_filter('rest_pre_serve_request', 'rest_send_cors_headers');
     add_filter('rest_pre_serve_request', function($value) {
-        header('Access-Control-Allow-Origin: *');
-        header('Access-Control-Allow-Methods: GET, POST, OPTIONS, PUT, DELETE');
+        if (!headers_sent()) {
+            header('Access-Control-Allow-Origin: *');
+            header('Access-Control-Allow-Methods: GET, POST, OPTIONS, PUT, DELETE');
+        }
         header('Access-Control-Allow-Credentials: true');
         header('Access-Control-Allow-Headers: Authorization, X-WP-Nonce, Content-Type, Origin, Accept');
         header('Cache-Control: no-cache, no-store, must-revalidate, max-age=0, s-maxage=0');
