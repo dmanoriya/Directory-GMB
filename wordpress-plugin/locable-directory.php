@@ -1505,10 +1505,42 @@ function locable_ajax_import_chunk() {
             ? sanitize_title($row['slug'])
             : sanitize_title($title . ($city_name ? '-' . $city_name : ''));
 
+        $detected_city = locable_clean_city_name(sanitize_text_field($row['city'] ?? ''));
+        $raw_address = sanitize_text_field($row['address'] ?? '');
+        if (empty($detected_city) && !empty($raw_address)) {
+            if (preg_match('/,\s*([^,]+),\s*[A-Z]{2}/i', $raw_address, $m)) {
+                $detected_city = locable_clean_city_name(trim($m[1]));
+            }
+        }
+        if (empty($detected_city)) {
+            $detected_city = 'San Diego';
+        }
+
+        $detected_state = locable_detect_state_from_meta(
+            sanitize_text_field($row['state'] ?? ''),
+            $detected_city,
+            $raw_address
+        );
+
+        $row_desc = sanitize_textarea_field($row['description'] ?? '');
+        if (empty($row_desc) || strlen(trim($row_desc)) < 40) {
+            $row_desc = locable_synthesize_about_content(
+                $title,
+                sanitize_text_field($row['type'] ?? ''),
+                $detected_city,
+                $detected_state,
+                $raw_address,
+                floatval($row['rating'] ?? 5.0),
+                intval($row['reviews'] ?? 0),
+                sanitize_text_field($row['serviceOptions'] ?? ($row['otherTypes'] ?? '')),
+                sanitize_text_field($row['phone'] ?? '')
+            );
+        }
+
         $post_data = array(
             'post_title'   => $title,
             'post_name'    => $clean_slug_candidate,
-            'post_content' => sanitize_textarea_field($row['description'] ?? ''),
+            'post_content' => $row_desc,
             'post_type'    => 'business_listing',
             'post_status'  => 'publish',
         );
@@ -1517,6 +1549,16 @@ function locable_ajax_import_chunk() {
             $post_data['ID'] = $existing[0];
             // Do not alter post_name on updates so URLs stay permanent and never 404!
             unset($post_data['post_name']);
+            // If existing listing already has custom description, keep user's description
+            $existing_content = get_post_field('post_content', $existing[0]);
+            $existing_desc_meta = get_post_meta($existing[0], 'description', true);
+            if (!empty($existing_desc_meta) && strlen(trim($existing_desc_meta)) >= 40) {
+                $row_desc = $existing_desc_meta;
+                unset($post_data['post_content']);
+            } elseif (!empty($existing_content) && strlen(trim($existing_content)) >= 40) {
+                $row_desc = $existing_content;
+                unset($post_data['post_content']);
+            }
             $post_id = wp_update_post($post_data, true);
             if (!is_wp_error($post_id)) $updated++; else $errors++;
         } else {
@@ -1539,15 +1581,11 @@ function locable_ajax_import_chunk() {
             'typeSlug'       => sanitize_text_field($row['typeSlug']       ?? ''),
             'otherTypes'     => sanitize_text_field($row['otherTypes']     ?? ''),
             'slug'           => $final_slug,
-            'city'           => sanitize_text_field($row['city']           ?? ''),
-            'state'          => locable_detect_state_from_meta(
-                                  sanitize_text_field($row['state'] ?? ''),
-                                  sanitize_text_field($row['city'] ?? ''),
-                                  sanitize_text_field($row['address'] ?? '')
-                                ),
+            'city'           => $detected_city,
+            'state'          => $detected_state,
             'zip'            => sanitize_text_field($row['zip']            ?? ''),
             'country'        => sanitize_text_field($row['country']        ?? ''),
-            'address'        => sanitize_text_field($row['address']        ?? ''),
+            'address'        => $raw_address,
             'website'        => esc_url_raw($row['website']                ?? ''),
             'phone'          => sanitize_text_field($row['phone']          ?? ''),
             'price'          => sanitize_text_field($row['price']          ?? '$$'),
@@ -1556,6 +1594,7 @@ function locable_ajax_import_chunk() {
             'openState'      => sanitize_text_field($row['openState']      ?? ''),
             'workingHours'   => wp_kses_post($row['workingHours']          ?? ''),
             'serviceOptions' => sanitize_text_field($row['serviceOptions'] ?? ''),
+            'description'    => $row_desc,
             'thumbnail'      => esc_url_raw($row['thumbnail']              ?? ''),
             'latitude'       => floatval($row['latitude']                  ?? 0),
             'longitude'      => floatval($row['longitude']                 ?? 0),
@@ -1768,6 +1807,67 @@ function locable_ajax_sanitize_titles() {
 // ─── 9.2 AI SEO Content Generation Engine (Gemini / OpenAI) ──────────────────
 
 /**
+ * Synthesizes a structured, multi-paragraph local SEO "About Us" overview.
+ * Exactly mirrors the rich 4-paragraph content engine from the Next.js frontend,
+ * ensuring seamless parity between WordPress backend editor and public directory.
+ */
+function locable_synthesize_about_content($title, $type = '', $city = '', $state = '', $address = '', $rating = 5.0, $reviews = 0, $services_raw = '', $phone = '') {
+    $title         = trim($title) ?: 'This business';
+    $type          = trim($type) ?: 'Local Business';
+    $type_lower    = strtolower($type);
+    $city          = trim($city) ?: 'San Diego';
+    $state         = trim($state) ?: 'CA';
+    $address       = trim($address);
+    $rating_num    = floatval($rating) ?: 5.0;
+    $reviews_count = intval($reviews);
+
+    // Extract clean service options
+    $services = array();
+    if (is_array($services_raw)) {
+        $services = array_values(array_filter(array_map('trim', $services_raw)));
+    } elseif (is_string($services_raw) && !empty($services_raw)) {
+        $decoded = json_decode($services_raw, true);
+        if (is_array($decoded)) {
+            $services = array_values(array_filter(array_map('trim', $decoded)));
+        } else {
+            $services = array_values(array_filter(array_map('trim', explode(',', $services_raw))));
+        }
+    }
+
+    // Paragraph 1: Entity, Primary Category, Location & Mission
+    $location_phrase = !empty($address)
+        ? "Conveniently situated at {$address} in {$city}, {$state}"
+        : "Located in the heart of {$city}, {$state}";
+
+    $p1 = "{$title} is a premier {$type_lower} serving {$city} and the surrounding San Diego County communities. {$location_phrase}, {$title} delivers dependable, high-quality {$type_lower} services designed to meet the unique needs of local residents, patients, and clients.";
+
+    // Paragraph 2: Specialties, Services & Care
+    if (count($services) >= 2) {
+        $service_list = implode(', ', array_slice($services, 0, 5));
+        $p2 = "Specializing in a comprehensive array of professional solutions, their capabilities include {$service_list}. With a commitment to modern techniques, industry-grade standards, and client-first care, their team ensures every appointment and project is handled with precision.";
+    } else {
+        $p2 = "Whether you are seeking routine consultations, expert project execution, or customized solutions, their team brings seasoned industry experience and dedication to every client interaction. Every service is provided with meticulous attention to detail and lasting results.";
+    }
+
+    // Paragraph 3: Trust, Google Reviews & Reputation
+    if ($reviews_count > 0) {
+        $rating_str = number_format($rating_num, 1);
+        $p3 = "Demonstrating a strong track record of client satisfaction, {$title} holds an impressive {$rating_str}-star rating across {$reviews_count} verified Google reviews. Their reputation for transparent communication, prompt service, and dependable results has made them a trusted choice throughout {$city}.";
+    } else {
+        $p3 = "Committed to superior service and community trust, {$title} emphasizes transparent communication, courteous service, and lasting client relationships across {$city} and neighboring areas.";
+    }
+
+    // Paragraph 4: Accessibility & Contact Call to Action
+    if (!empty($phone)) {
+        $p4 = "To inquire about services, request an estimate, or schedule an appointment, contact their team at {$phone} or visit them in {$city}. You can also explore verified reviews, current hours of operation, and service details right here on the directory.";
+    } else {
+        $p4 = "For service inquiries, hours of operation, and scheduling availability, visit their location in {$city} or browse their complete verified business profile on the San Diego Business Directory.";
+    }
+
+    return implode("\n\n", array($p1, $p2, $p3, $p4));
+}
+
+/**
  * Builds an expert local SEO copywriting prompt for a business listing.
  */
 function locable_build_seo_prompt($title, $category, $city, $address = '', $services = '', $rating = '5.0', $reviews = '0') {
@@ -1934,7 +2034,9 @@ function locable_ajax_ai_generate_single() {
     $model    = get_option('locable_ai_model', '');
 
     if (empty($api_key)) {
-        wp_send_json_error(['message' => 'AI API key is missing. Please enter your Google Gemini or OpenAI key in Directory Settings.'], 400);
+        $result = locable_synthesize_about_content($title, $type, $city, 'CA', $address, $rating, $reviews, $services);
+        wp_send_json_success(['text' => $result]);
+        return;
     }
 
     $prompt = locable_build_seo_prompt($title, $type, $city, $address, $services, $rating, $reviews);
@@ -1963,10 +2065,7 @@ function locable_ajax_ai_generate_batch() {
     $only_empty = !empty($_POST['only_empty']);
     $offset     = intval($_POST['offset'] ?? 0);
     $batch_size = 8; // Process 8 listings per batch to keep response swift
-
-    if (empty($api_key)) {
-        wp_send_json_error(['message' => 'AI API Key is missing. Please enter your API key.'], 400);
-    }
+    $has_api_key = !empty($api_key);
 
     $query_args = array(
         'post_type'      => 'business_listing',
@@ -2002,8 +2101,12 @@ function locable_ajax_ai_generate_batch() {
         $rating   = get_post_meta($pid, 'rating', true) ?: '5.0';
         $reviews  = get_post_meta($pid, 'reviews', true) ?: '1';
 
-        $prompt = locable_build_seo_prompt($title, $type, $city, $address, $services, $rating, $reviews);
-        $ai_text = locable_call_ai_api($prompt, $provider, $api_key, $model);
+        if ($has_api_key) {
+            $prompt = locable_build_seo_prompt($title, $type, $city, $address, $services, $rating, $reviews);
+            $ai_text = locable_call_ai_api($prompt, $provider, $api_key, $model);
+        } else {
+            $ai_text = locable_synthesize_about_content($title, $type, $city, 'CA', $address, $rating, $reviews, $services);
+        }
 
         if (!is_wp_error($ai_text) && !empty($ai_text)) {
             update_post_meta($pid, 'description', sanitize_textarea_field($ai_text));
@@ -3438,8 +3541,20 @@ function locable_render_business_fields_metabox($post) {
     $founderExperience = get_post_meta($post->ID, 'founderExperience', true) ?: get_post_meta($post->ID, 'founder_experience', true);
     $founderQuote      = get_post_meta($post->ID, 'founderQuote', true) ?: get_post_meta($post->ID, 'founder_quote', true);
     $founderAvatar     = get_post_meta($post->ID, 'founderAvatar', true) ?: get_post_meta($post->ID, 'founder_avatar', true);
-    $licenseStatus     = get_post_meta($post->ID, 'licenseStatus', true) ?: get_post_meta($post->ID, 'license_status', true);
     $description       = get_post_meta($post->ID, 'description', true) ?: $post->post_content;
+    if (empty($description) || strlen(trim($description)) < 40) {
+        $description = locable_synthesize_about_content(
+            $post->post_title,
+            $type,
+            $city,
+            $state,
+            $address,
+            $rating,
+            $reviews,
+            $serviceOptions,
+            $phone
+        );
+    }
 
     ?>
     <style>

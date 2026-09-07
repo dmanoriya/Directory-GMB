@@ -243,7 +243,7 @@ async function fetchWpListingsDirectly(): Promise<BusinessListing[]> {
 
   try {
     const firstRes = await fetch(
-      `${apiUrl}/wp-json/wp/v2/business_listing?per_page=100&page=1&orderby=modified&order=desc&_fields=id,slug,title,meta,modified_gmt&_t=${now}`,
+      `${apiUrl}/wp-json/wp/v2/business_listing?per_page=100&page=1&orderby=modified&order=desc&_fields=id,slug,title,content,meta,modified_gmt&_t=${now}`,
       {
         cache: 'no-store',
         headers: {
@@ -295,7 +295,7 @@ async function fetchWpListingsDirectly(): Promise<BusinessListing[]> {
         for (let page = i; page < Math.min(i + BATCH_SIZE, totalPages + 1); page++) {
           batchPromises.push(
             fetch(
-              `${apiUrl}/wp-json/wp/v2/business_listing?per_page=100&page=${page}&orderby=modified&order=desc&_fields=id,slug,title,meta,modified_gmt&_t=${now}`,
+              `${apiUrl}/wp-json/wp/v2/business_listing?per_page=100&page=${page}&orderby=modified&order=desc&_fields=id,slug,title,content,meta,modified_gmt&_t=${now}`,
               {
                 cache: 'no-store',
                 headers: {
@@ -309,7 +309,7 @@ async function fetchWpListingsDirectly(): Promise<BusinessListing[]> {
               if (r.ok) return r.json();
               await new Promise((res) => setTimeout(res, 200));
               const retry = await fetch(
-                `${apiUrl}/wp-json/wp/v2/business_listing?per_page=100&page=${page}&orderby=modified&order=desc&_fields=id,slug,title,meta,modified_gmt&_t=${now}`,
+                `${apiUrl}/wp-json/wp/v2/business_listing?per_page=100&page=${page}&orderby=modified&order=desc&_fields=id,slug,title,content,meta,modified_gmt&_t=${now}`,
                 {
                   cache: 'no-store',
                   headers: {
@@ -480,7 +480,7 @@ export const getBusinessBySlug = cache(async (slugOrPlaceId: string): Promise<Bu
     // 2a. Direct slug lookup
     try {
       const res = await fetch(
-        `${apiUrl}/wp-json/wp/v2/business_listing?slug=${encodeURIComponent(slugOrPlaceId)}&_fields=id,slug,title,meta,modified_gmt&_t=${Date.now()}`,
+        `${apiUrl}/wp-json/wp/v2/business_listing?slug=${encodeURIComponent(slugOrPlaceId)}&_fields=id,slug,title,content,meta,modified_gmt&_t=${Date.now()}`,
         {
           cache: 'no-store',
           headers: {
@@ -508,7 +508,7 @@ export const getBusinessBySlug = cache(async (slugOrPlaceId: string): Promise<Bu
     if (baseSlug !== slugOrPlaceId) {
       try {
         const resBase = await fetch(
-          `${apiUrl}/wp-json/wp/v2/business_listing?slug=${encodeURIComponent(baseSlug)}&_fields=id,slug,title,meta,modified_gmt&_t=${Date.now()}`,
+          `${apiUrl}/wp-json/wp/v2/business_listing?slug=${encodeURIComponent(baseSlug)}&_fields=id,slug,title,content,meta,modified_gmt&_t=${Date.now()}`,
           {
             cache: 'no-store',
             headers: {
@@ -534,7 +534,7 @@ export const getBusinessBySlug = cache(async (slugOrPlaceId: string): Promise<Bu
     try {
       const cleanSearch = slugOrPlaceId.replace(/-/g, ' ').replace(/[0-9]+/g, '').trim();
       const resSearch = await fetch(
-        `${apiUrl}/wp-json/wp/v2/business_listing?search=${encodeURIComponent(cleanSearch)}&per_page=15&_fields=id,slug,title,meta,modified_gmt&_t=${Date.now()}`,
+        `${apiUrl}/wp-json/wp/v2/business_listing?search=${encodeURIComponent(cleanSearch)}&per_page=15&_fields=id,slug,title,content,meta,modified_gmt&_t=${Date.now()}`,
         {
           cache: 'no-store',
           headers: {
