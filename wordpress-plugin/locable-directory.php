@@ -1552,10 +1552,10 @@ function locable_ajax_import_chunk() {
             // If existing listing already has custom description, keep user's description
             $existing_content = get_post_field('post_content', $existing[0]);
             $existing_desc_meta = get_post_meta($existing[0], 'description', true);
-            if (!empty($existing_desc_meta) && strlen(trim($existing_desc_meta)) >= 40) {
+            if (!empty($existing_desc_meta) && trim($existing_desc_meta) !== '') {
                 $row_desc = $existing_desc_meta;
                 unset($post_data['post_content']);
-            } elseif (!empty($existing_content) && strlen(trim($existing_content)) >= 40) {
+            } elseif (!empty($existing_content) && trim($existing_content) !== '') {
                 $row_desc = $existing_content;
                 unset($post_data['post_content']);
             }
@@ -3541,8 +3541,12 @@ function locable_render_business_fields_metabox($post) {
     $founderExperience = get_post_meta($post->ID, 'founderExperience', true) ?: get_post_meta($post->ID, 'founder_experience', true);
     $founderQuote      = get_post_meta($post->ID, 'founderQuote', true) ?: get_post_meta($post->ID, 'founder_quote', true);
     $founderAvatar     = get_post_meta($post->ID, 'founderAvatar', true) ?: get_post_meta($post->ID, 'founder_avatar', true);
-    $description       = get_post_meta($post->ID, 'description', true) ?: $post->post_content;
-    if (empty($description) || strlen(trim($description)) < 40) {
+    $licenseStatus     = get_post_meta($post->ID, 'licenseStatus', true) ?: (get_post_meta($post->ID, 'license_status', true) ?: '');
+    $description       = get_post_meta($post->ID, 'description', true);
+    if ($description === '' || $description === false) {
+        $description = $post->post_content;
+    }
+    if (empty(trim((string)$description))) {
         $description = locable_synthesize_about_content(
             $post->post_title,
             $type,

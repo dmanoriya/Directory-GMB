@@ -7,8 +7,8 @@ import { BusinessListing } from '@/types/directory';
  * Otherwise, it dynamically synthesizes a structured, multi-paragraph local SEO overview.
  */
 export function getListingAboutParagraphs(business: BusinessListing): string[] {
-  // If custom description exists from WordPress and has substantial content, return it
-  if (business.description && business.description.trim().length > 40) {
+  // If custom description exists from WordPress, always return it
+  if (business.description && business.description.trim().length > 0) {
     const rawParagraphs = business.description
       .split(/\n\s*\n/)
       .map((p: string) => p.trim())

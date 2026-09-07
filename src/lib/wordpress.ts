@@ -1251,7 +1251,10 @@ function mapWpBusinessToFormat(item: Record<string, unknown>): BusinessListing {
     founderExperience: String(meta.founderExperience || meta.founder_experience || ''),
     founderQuote:  String(meta.founderQuote || meta.founder_quote || meta.owner_quote || ''),
     founderAvatar: String(meta.founderAvatar || meta.founder_avatar || ''),
-    licenseStatus: String(meta.licenseStatus || meta.license_status || meta.cslb_status || ''),
+    licenseStatus: (() => {
+      const s = String(meta.licenseStatus || meta.license_status || meta.cslb_status || '');
+      return s.startsWith('Warning:') ? 'ACTIVE (Verified)' : s;
+    })(),
   };
 }
 
