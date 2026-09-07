@@ -15,7 +15,7 @@ import {
   Share2,
   UserCheck
 } from 'lucide-react';
-import { getBusinessBySlug, getBusinesses, getReviewsForBusiness, parseServiceOptions, getWpApiUrl } from '@/lib/wordpress';
+import { getBusinessBySlug, getSimilarBusinesses, getReviewsForBusiness, parseServiceOptions, getWpApiUrl } from '@/lib/wordpress';
 import { getListingAboutParagraphs, getListingMetaSnippet, generateLocalBusinessSchema } from '@/lib/seoContent';
 import { getRankMathMetadata } from '@/lib/rankMath';
 import RankMathSchema from '@/components/RankMathSchema';
@@ -84,14 +84,10 @@ export default async function ListingDetailPage({ params }: ListingPageProps) {
   const detailServices = parseServiceOptions(business.serviceOptions || (business as any).services);
   const fallbackServices = detailServices.length > 0 ? detailServices : parseServiceOptions(business.otherTypes);
 
-  const [reviews, categoryListings] = await Promise.all([
+  const [reviews, similarBusinesses] = await Promise.all([
     getReviewsForBusiness(business.placeId),
-    getBusinesses({ categorySlug: business.typeSlug })
+    getSimilarBusinesses(business.typeSlug, business.placeId, 3)
   ]);
-
-  const similarBusinesses = categoryListings
-    .filter((b) => b.placeId !== business.placeId)
-    .slice(0, 3);
 
   // Dynamic Founder Data & Category-Aware Fallbacks from WordPress Backend
   const isTradeService = /plumb|hvac|roof|electr|solar|construct|remodel|contract|handyman/i.test(business.type + ' ' + business.title);

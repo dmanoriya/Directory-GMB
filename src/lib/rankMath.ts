@@ -23,10 +23,12 @@ export interface RankMathHeadData {
 const FRONTEND_CANONICAL_DOMAIN = 'https://sandiegobusinesscircle.com';
 
 let rankMathCache: Map<string, { data: RankMathHeadData | null; timestamp: number }> = new Map();
-const RM_CACHE_TTL_MS = 15 * 1000; // 15 seconds in-memory cache for fast repeat requests
+const rankMathInFlight: Map<string, Promise<{ metadata: Metadata; jsonLdSchemas: string[] }>> = new Map();
+const RM_CACHE_TTL_MS = 30 * 1000; // 30 seconds in-memory cache for fast repeat requests
 
 export function clearRankMathCache(): void {
   rankMathCache.clear();
+  rankMathInFlight.clear();
 }
 
 /**
@@ -160,67 +162,81 @@ export async function getRankMathMetadata(options: {
   fallbackCanonicalPath?: string;
 }): Promise<{ metadata: Metadata; jsonLdSchemas: string[] }> {
   const { wpUrl, fallbackMetadata, fallbackCanonicalPath } = options;
-  const now = Date.now();
 
-  const cached = rankMathCache.get(wpUrl);
-  let headData: RankMathHeadData | null = null;
+  // 1. In-flight promise deduplication: share ongoing request across generateMetadata and Page
+  if (rankMathInFlight.has(wpUrl)) {
+    return rankMathInFlight.get(wpUrl)!;
+  }
 
-  if (cached && now - cached.timestamp < RM_CACHE_TTL_MS) {
-    headData = cached.data;
-  } else {
-    const rawHead = await fetchRankMathHead(wpUrl);
-    if (rawHead) {
-      headData = parseRankMathHead(rawHead, fallbackCanonicalPath);
+  const promise = (async () => {
+    const now = Date.now();
+    const cached = rankMathCache.get(wpUrl);
+    let headData: RankMathHeadData | null = null;
+
+    if (cached && now - cached.timestamp < RM_CACHE_TTL_MS) {
+      headData = cached.data;
+    } else {
+      const rawHead = await fetchRankMathHead(wpUrl);
+      if (rawHead) {
+        headData = parseRankMathHead(rawHead, fallbackCanonicalPath);
+      }
+      rankMathCache.set(wpUrl, { data: headData, timestamp: now });
     }
-    rankMathCache.set(wpUrl, { data: headData, timestamp: now });
-  }
 
-  if (!headData || !headData.title || headData.title.toLowerCase().includes('page not found')) {
-    return {
-      metadata: fallbackMetadata,
-      jsonLdSchemas: [],
+    if (!headData || !headData.title || headData.title.toLowerCase().includes('page not found')) {
+      return {
+        metadata: fallbackMetadata,
+        jsonLdSchemas: [],
+      };
+    }
+
+    // Merge Rank Math tags on top of fallback metadata
+    const mergedMetadata: Metadata = {
+      ...fallbackMetadata,
+      title: headData.title || fallbackMetadata.title,
+      description: headData.description || fallbackMetadata.description,
+      alternates: {
+        ...fallbackMetadata.alternates,
+        canonical: headData.canonical || fallbackMetadata.alternates?.canonical,
+      },
+      robots: headData.robots
+        ? {
+            index: !headData.robots.includes('noindex'),
+            follow: !headData.robots.includes('nofollow'),
+          }
+        : fallbackMetadata.robots,
+      openGraph: {
+        ...fallbackMetadata.openGraph,
+        title: headData.ogTitle || headData.title || (fallbackMetadata.openGraph?.title as string),
+        description: headData.ogDescription || headData.description || (fallbackMetadata.openGraph?.description as string),
+        url: headData.canonical || (fallbackMetadata.openGraph?.url as string),
+        type: (headData.ogType as any) || (fallbackMetadata.openGraph as any)?.type || 'website',
+        siteName: headData.ogSiteName || fallbackMetadata.openGraph?.siteName,
+        images: headData.ogImage
+          ? [{ url: headData.ogImage }]
+          : fallbackMetadata.openGraph?.images || [],
+      },
+      twitter: {
+        ...fallbackMetadata.twitter,
+        card: (headData.twitterCard as any) || 'summary_large_image',
+        title: headData.twitterTitle || headData.title || (fallbackMetadata.twitter?.title as string),
+        description: headData.twitterDescription || headData.description || (fallbackMetadata.twitter?.description as string),
+        images: headData.twitterImage ? [headData.twitterImage] : fallbackMetadata.twitter?.images,
+      },
     };
+
+    return {
+      metadata: mergedMetadata,
+      jsonLdSchemas: headData.jsonLdSchemas || [],
+    };
+  })();
+
+  rankMathInFlight.set(wpUrl, promise);
+  try {
+    return await promise;
+  } finally {
+    rankMathInFlight.delete(wpUrl);
   }
-
-  // Merge Rank Math tags on top of fallback metadata
-  const mergedMetadata: Metadata = {
-    ...fallbackMetadata,
-    title: headData.title || fallbackMetadata.title,
-    description: headData.description || fallbackMetadata.description,
-    alternates: {
-      ...fallbackMetadata.alternates,
-      canonical: headData.canonical || fallbackMetadata.alternates?.canonical,
-    },
-    robots: headData.robots
-      ? {
-          index: !headData.robots.includes('noindex'),
-          follow: !headData.robots.includes('nofollow'),
-        }
-      : fallbackMetadata.robots,
-    openGraph: {
-      ...fallbackMetadata.openGraph,
-      title: headData.ogTitle || headData.title || (fallbackMetadata.openGraph?.title as string),
-      description: headData.ogDescription || headData.description || (fallbackMetadata.openGraph?.description as string),
-      url: headData.canonical || (fallbackMetadata.openGraph?.url as string),
-      type: (headData.ogType as any) || (fallbackMetadata.openGraph as any)?.type || 'website',
-      siteName: headData.ogSiteName || fallbackMetadata.openGraph?.siteName,
-      images: headData.ogImage
-        ? [{ url: headData.ogImage }]
-        : fallbackMetadata.openGraph?.images || [],
-    },
-    twitter: {
-      ...fallbackMetadata.twitter,
-      card: (headData.twitterCard as any) || 'summary_large_image',
-      title: headData.twitterTitle || headData.title || (fallbackMetadata.twitter?.title as string),
-      description: headData.twitterDescription || headData.description || (fallbackMetadata.twitter?.description as string),
-      images: headData.twitterImage ? [headData.twitterImage] : fallbackMetadata.twitter?.images,
-    },
-  };
-
-  return {
-    metadata: mergedMetadata,
-    jsonLdSchemas: headData.jsonLdSchemas || [],
-  };
 }
 
 function decodeHtmlEntities(str: string): string {

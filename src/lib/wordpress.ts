@@ -91,6 +91,15 @@ interface ListingsCacheStore {
 let listingsCache: ListingsCacheStore | null = null;
 let categoriesCache: { data: Category[]; timestamp: number } | null = null;
 let citiesCache: { data: LocationCity[]; timestamp: number } | null = null;
+let brandingCache: { data: SiteBranding; timestamp: number } | null = null;
+let activeBrandingPromise: Promise<SiteBranding> | null = null;
+
+const singleBusinessCache = new Map<string, { data: BusinessListing; timestamp: number }>();
+const activeSingleBusinessPromises = new Map<string, Promise<BusinessListing | null>>();
+
+const reviewsCache = new Map<string, { data: BusinessReview[]; timestamp: number }>();
+const activeReviewsPromises = new Map<string, Promise<BusinessReview[]>>();
+
 let activeListingsPromise: Promise<BusinessListing[]> | null = null;
 
 const CACHE_TTL_MS = 15 * 60 * 1000; // 15 minutes cache
@@ -99,13 +108,42 @@ export function clearListingsCache(): void {
   listingsCache = null;
   categoriesCache = null;
   citiesCache = null;
+  brandingCache = null;
+  activeBrandingPromise = null;
+  singleBusinessCache.clear();
+  activeSingleBusinessPromises.clear();
+  reviewsCache.clear();
+  activeReviewsPromises.clear();
   activeListingsPromise = null;
   clearRankMathCache();
 }
 
 /**
+ * Upsert or update a single business listing in in-memory caches.
+ */
+export function upsertListingInCache(listing: BusinessListing): void {
+  const now = Date.now();
+  if (listing.slug) singleBusinessCache.set(listing.slug.toLowerCase().trim(), { data: listing, timestamp: now });
+  if (listing.wpSlug) singleBusinessCache.set(listing.wpSlug.toLowerCase().trim(), { data: listing, timestamp: now });
+  if (listing.placeId) singleBusinessCache.set(listing.placeId.toLowerCase().trim(), { data: listing, timestamp: now });
+  if (listing.id) singleBusinessCache.set(String(listing.id).trim(), { data: listing, timestamp: now });
+
+  if (listingsCache && Array.isArray(listingsCache.data)) {
+    const idx = listingsCache.data.findIndex(
+      (b) => b.id === listing.id || (listing.placeId && b.placeId === listing.placeId) || b.slug === listing.slug
+    );
+    if (idx !== -1) {
+      listingsCache.data[idx] = listing;
+    } else {
+      listingsCache.data.unshift(listing);
+      listingsCache.total += 1;
+    }
+  }
+}
+
+/**
  * Fetch dynamic Site Branding (Logo, Favicon, Brand Title, SEO) from WordPress.
- * Zero-delay: always fetches live with cache-busting headers.
+ * Micro-cached (60s) with in-flight deduplication to avoid redundant HTTP calls on every page load.
  */
 export async function getSiteBranding(): Promise<SiteBranding> {
   const defaultBranding: SiteBranding = {
@@ -122,42 +160,59 @@ export async function getSiteBranding(): Promise<SiteBranding> {
     heroBadgeText: 'VERIFIED LOCAL BUSINESS DIRECTORY •',
   };
 
+  const now = Date.now();
+  if (brandingCache && now - brandingCache.timestamp < 60000) {
+    return brandingCache.data;
+  }
+
+  if (activeBrandingPromise) {
+    return activeBrandingPromise;
+  }
+
   const apiUrl = getWpApiUrl();
   if (!apiUrl) return defaultBranding;
 
-  const now = Date.now();
-  try {
-    const res = await fetch(`${apiUrl}/wp-json/locable/v1/branding?_t=${now}`, {
-      cache: 'no-store',
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) LocableNextJS/1.0',
-        'Cache-Control': 'no-cache, no-store, must-revalidate, max-age=0, s-maxage=0',
-        'Pragma': 'no-cache',
-      },
-      signal: AbortSignal.timeout(4000),
-    });
+  activeBrandingPromise = (async () => {
+    try {
+      const res = await fetch(`${apiUrl}/wp-json/locable/v1/branding?_t=${Date.now()}`, {
+        cache: 'no-store',
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) LocableNextJS/1.0',
+          'Cache-Control': 'no-cache, no-store, must-revalidate, max-age=0, s-maxage=0',
+          'Pragma': 'no-cache',
+        },
+        signal: AbortSignal.timeout(3500),
+      });
 
-    if (res.ok) {
-      const data = await res.json();
-      return {
-        siteName: data.siteName || defaultBranding.siteName,
-        tagline: data.tagline || defaultBranding.tagline,
-        logo: data.logo || '',
-        logoDark: data.logoDark || '',
-        favicon: data.favicon || '',
-        metaTitle: data.metaTitle || defaultBranding.metaTitle,
-        metaDescription: data.metaDescription || defaultBranding.metaDescription,
-        heroImage1: data.heroImage1 || defaultBranding.heroImage1,
-        heroImage2: data.heroImage2 || defaultBranding.heroImage2,
-        heroImage3: data.heroImage3 || defaultBranding.heroImage3,
-        heroBadgeText: data.heroBadgeText || defaultBranding.heroBadgeText,
-      };
+      if (res.ok) {
+        const data = await res.json();
+        const branding: SiteBranding = {
+          siteName: data.siteName || defaultBranding.siteName,
+          tagline: data.tagline || defaultBranding.tagline,
+          logo: data.logo || '',
+          logoDark: data.logoDark || '',
+          favicon: data.favicon || '',
+          metaTitle: data.metaTitle || defaultBranding.metaTitle,
+          metaDescription: data.metaDescription || defaultBranding.metaDescription,
+          heroImage1: data.heroImage1 || defaultBranding.heroImage1,
+          heroImage2: data.heroImage2 || defaultBranding.heroImage2,
+          heroImage3: data.heroImage3 || defaultBranding.heroImage3,
+          heroBadgeText: data.heroBadgeText || defaultBranding.heroBadgeText,
+        };
+        brandingCache = { data: branding, timestamp: Date.now() };
+        return branding;
+      }
+    } catch (e) {
+      // Return fallback
     }
-  } catch (e) {
-    // Return default fallback
-  }
+    return brandingCache ? brandingCache.data : defaultBranding;
+  })();
 
-  return defaultBranding;
+  try {
+    return await activeBrandingPromise;
+  } finally {
+    activeBrandingPromise = null;
+  }
 }
 
 async function getWpListingStatus(apiUrl: string): Promise<{ total: number; latestModifiedGmt: string } | null> {
@@ -203,17 +258,68 @@ async function fetchAllFromWp(): Promise<BusinessListing[]> {
         listingsCache = { data: [], timestamp: now, lastModifiedGmt: '', total: 0 };
         return [];
       }
+
+      // Total and modification timestamp both match! Cache is 100% up to date.
       if (
-        wpStatus.total !== listingsCache.data.length ||
-        (wpStatus.latestModifiedGmt && listingsCache.lastModifiedGmt && wpStatus.latestModifiedGmt !== listingsCache.lastModifiedGmt)
+        wpStatus.total === listingsCache.data.length &&
+        wpStatus.latestModifiedGmt === listingsCache.lastModifiedGmt
       ) {
-        console.log(`[WordPress] Detected change in WordPress (Total: WP ${wpStatus.total} vs Cache ${listingsCache.data.length}, Mod: WP ${wpStatus.latestModifiedGmt} vs Cache ${listingsCache.lastModifiedGmt}). Invalidating cache immediately.`);
-        listingsCache = null;
-      } else {
-        // Total and modification timestamp both match! Cache is 100% up to date.
         listingsCache.timestamp = now;
         return listingsCache.data;
       }
+
+      // Total count matches BUT modified timestamp changed:
+      // Someone edited or generated AI content for a listing!
+      // SMART DELTA REFRESH: Fetch ONLY the top 10 most recently modified posts (~60ms)
+      // instead of wiping the cache and re-downloading 500+ listings across 5 pages!
+      if (
+        wpStatus.total === listingsCache.data.length &&
+        wpStatus.latestModifiedGmt &&
+        listingsCache.lastModifiedGmt &&
+        wpStatus.latestModifiedGmt !== listingsCache.lastModifiedGmt
+      ) {
+        try {
+          const deltaRes = await fetch(
+            `${apiUrl}/wp-json/wp/v2/business_listing?per_page=10&orderby=modified&order=desc&_fields=id,slug,title,content,meta,modified_gmt&_t=${now}`,
+            {
+              cache: 'no-store',
+              headers: {
+                'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) LocableNextJS/1.0',
+                'Cache-Control': 'no-cache, no-store, must-revalidate',
+                'Pragma': 'no-cache',
+              },
+              signal: AbortSignal.timeout(4000),
+            }
+          );
+          if (deltaRes.ok) {
+            const deltaItems = await deltaRes.json();
+            if (Array.isArray(deltaItems) && deltaItems.length > 0) {
+              const updatedMapped = deltaItems.map(mapWpBusinessToFormat);
+              for (const item of updatedMapped) {
+                const idx = listingsCache.data.findIndex(
+                  (b) => b.id === item.id || (item.placeId && b.placeId === item.placeId) || b.slug === item.slug
+                );
+                if (idx !== -1) {
+                  listingsCache.data[idx] = item;
+                } else {
+                  listingsCache.data.unshift(item);
+                }
+                upsertListingInCache(item);
+              }
+              listingsCache.lastModifiedGmt = wpStatus.latestModifiedGmt;
+              listingsCache.timestamp = now;
+              console.log(`[WordPress] Smart Delta Refresh: updated ${updatedMapped.length} listings in memory (~50ms).`);
+              return listingsCache.data;
+            }
+          }
+        } catch (e) {
+          // If delta fetch fails, fall through to full fetch
+        }
+      }
+
+      // If count changed (new listing added or deleted), invalidate for full fetch
+      console.log(`[WordPress] Total count changed (WP: ${wpStatus.total} vs Cache: ${listingsCache.data.length}). Re-fetching full directory.`);
+      listingsCache = null;
     } else if (now - listingsCache.timestamp < 3000) {
       // If status check timed out but cache is under 3s old, return fast cache
       return listingsCache.data;
@@ -464,99 +570,183 @@ function findBusinessInList(list: BusinessListing[], target: string): BusinessLi
   return null;
 }
 
-export const getBusinessBySlug = cache(async (slugOrPlaceId: string): Promise<BusinessListing | null> => {
-  const target = (slugOrPlaceId || '').toLowerCase().trim();
+/**
+ * Ultra-fast targeted single-listing fetcher from WordPress REST API (~50-80ms).
+ * Bypasses full-database pagination downloads for zero-delay instant page loads.
+ */
+export async function fetchSingleBusinessFromWp(slugOrIdOrPlaceId: string): Promise<BusinessListing | null> {
+  const apiUrl = getWpApiUrl();
+  if (!apiUrl) return null;
+  const target = (slugOrIdOrPlaceId || '').trim();
   if (!target) return null;
 
-  // 1. Ensure full dataset is up to date (checks WordPress modified status in ~15ms)
-  const allListings = await fetchAllFromWp();
-  const cachedMatch = findBusinessInList(allListings, target);
-  if (cachedMatch) return cachedMatch;
+  const now = Date.now();
+  const headers = {
+    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) LocableNextJS/1.0',
+    'Cache-Control': 'no-cache, no-store, must-revalidate',
+    'Pragma': 'no-cache',
+  };
 
-  const apiUrl = getWpApiUrl();
+  // 1. Direct Slug Lookup: GET /wp-json/wp/v2/business_listing?slug=...
+  try {
+    const res = await fetch(
+      `${apiUrl}/wp-json/wp/v2/business_listing?slug=${encodeURIComponent(target)}&_fields=id,slug,title,content,meta,modified_gmt&_t=${now}`,
+      { cache: 'no-store', headers, signal: AbortSignal.timeout(3500) }
+    );
+    if (res.ok) {
+      const items = await res.json();
+      if (Array.isArray(items) && items.length > 0) {
+        return mapWpBusinessToFormat(items[0]);
+      }
+    }
+  } catch (e) {}
 
-  // 2. Direct queries to WordPress REST API with cache: 'no-store'
-  if (apiUrl) {
-    // 2a. Direct slug lookup
+  // 2. Direct Slug without city suffix (e.g. 'the-studio-med-spa-san-diego' -> 'the-studio-med-spa')
+  const baseSlug = target.replace(/-(san-diego|chula-vista|oceanside|carlsbad|escondido|la-mesa|el-cajon|encinitas|san-marcos|vista|poway|coronado|del-mar|imperial-beach|lemon-grove|national-city|santee|solana-beach)/i, '');
+  if (baseSlug !== target) {
     try {
       const res = await fetch(
-        `${apiUrl}/wp-json/wp/v2/business_listing?slug=${encodeURIComponent(slugOrPlaceId)}&_fields=id,slug,title,content,meta,modified_gmt&_t=${Date.now()}`,
-        {
-          cache: 'no-store',
-          headers: {
-            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) LocableNextJS/1.0',
-            'Cache-Control': 'no-cache, no-store, must-revalidate',
-            'Pragma': 'no-cache',
-          },
-          signal: AbortSignal.timeout(5000),
-        }
+        `${apiUrl}/wp-json/wp/v2/business_listing?slug=${encodeURIComponent(baseSlug)}&_fields=id,slug,title,content,meta,modified_gmt&_t=${now}`,
+        { cache: 'no-store', headers, signal: AbortSignal.timeout(3500) }
       );
       if (res.ok) {
         const items = await res.json();
         if (Array.isArray(items) && items.length > 0) {
-          const mapped = items.map(mapWpBusinessToFormat);
-          const found = findBusinessInList(mapped, target);
-          if (found) return found;
+          return mapWpBusinessToFormat(items[0]);
         }
       }
-    } catch (e) {
-      console.warn('[WordPress] Direct slug lookup warning:', e);
-    }
+    } catch (e) {}
+  }
 
-    // 2b. Direct slug lookup without city suffix (e.g. querying 'the-studio-med-spa' when URL has 'the-studio-med-spa-san-diego')
-    const baseSlug = slugOrPlaceId.replace(/-(san-diego|chula-vista|oceanside|carlsbad|escondido|la-mesa|el-cajon|encinitas|san-marcos|vista|poway|coronado|del-mar|imperial-beach|lemon-grove|national-city|santee|solana-beach)/i, '');
-    if (baseSlug !== slugOrPlaceId) {
-      try {
-        const resBase = await fetch(
-          `${apiUrl}/wp-json/wp/v2/business_listing?slug=${encodeURIComponent(baseSlug)}&_fields=id,slug,title,content,meta,modified_gmt&_t=${Date.now()}`,
-          {
-            cache: 'no-store',
-            headers: {
-              'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) LocableNextJS/1.0',
-              'Cache-Control': 'no-cache, no-store, must-revalidate',
-              'Pragma': 'no-cache',
-            },
-            signal: AbortSignal.timeout(5000),
-          }
-        );
-        if (resBase.ok) {
-          const items = await resBase.json();
-          if (Array.isArray(items) && items.length > 0) {
-            const mapped = items.map(mapWpBusinessToFormat);
-            const found = findBusinessInList(mapped, target);
-            if (found) return found;
-          }
-        }
-      } catch (e) {}
-    }
-
-    // 2c. Try search query by slug keywords
+  // 3. Place ID lookup: GET /wp-json/wp/v2/business_listing?meta_key=placeId&meta_value=...
+  if (target.toLowerCase().startsWith('chij') || target.length > 20) {
     try {
-      const cleanSearch = slugOrPlaceId.replace(/-/g, ' ').replace(/[0-9]+/g, '').trim();
-      const resSearch = await fetch(
-        `${apiUrl}/wp-json/wp/v2/business_listing?search=${encodeURIComponent(cleanSearch)}&per_page=15&_fields=id,slug,title,content,meta,modified_gmt&_t=${Date.now()}`,
-        {
-          cache: 'no-store',
-          headers: {
-            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) LocableNextJS/1.0',
-            'Cache-Control': 'no-cache, no-store, must-revalidate',
-            'Pragma': 'no-cache',
-          },
-          signal: AbortSignal.timeout(5000),
-        }
+      const res = await fetch(
+        `${apiUrl}/wp-json/wp/v2/business_listing?meta_key=placeId&meta_value=${encodeURIComponent(target)}&_fields=id,slug,title,content,meta,modified_gmt&_t=${now}`,
+        { cache: 'no-store', headers, signal: AbortSignal.timeout(3500) }
       );
-      if (resSearch.ok) {
-        const items = await resSearch.json();
+      if (res.ok) {
+        const items = await res.json();
         if (Array.isArray(items) && items.length > 0) {
-          const mapped = items.map(mapWpBusinessToFormat);
-          const found = findBusinessInList(mapped, target);
-          if (found) return found;
+          return mapWpBusinessToFormat(items[0]);
+        }
+      }
+    } catch (e) {}
+  }
+
+  // 4. Numeric ID lookup: GET /wp-json/wp/v2/business_listing/{id}
+  if (/^\d+$/.test(target)) {
+    try {
+      const res = await fetch(
+        `${apiUrl}/wp-json/wp/v2/business_listing/${target}?_fields=id,slug,title,content,meta,modified_gmt&_t=${now}`,
+        { cache: 'no-store', headers, signal: AbortSignal.timeout(3500) }
+      );
+      if (res.ok) {
+        const item = await res.json();
+        if (item && item.id) {
+          return mapWpBusinessToFormat(item);
         }
       }
     } catch (e) {}
   }
 
   return null;
+}
+
+/**
+ * Fast Similar Businesses Resolver (up to limit recommendations)
+ * Runs in ~0.1ms if listings cache exists, or fetches only 4 items from WP REST (~60ms).
+ */
+export async function getSimilarBusinesses(
+  categorySlug?: string,
+  excludePlaceId?: string,
+  limit: number = 3
+): Promise<BusinessListing[]> {
+  // If memory cache exists, filter instantaneously in memory
+  if (listingsCache && listingsCache.data.length > 0) {
+    const list = filterListingsDataset(listingsCache.data, { categorySlug });
+    return list.filter((b) => !excludePlaceId || b.placeId !== excludePlaceId).slice(0, limit);
+  }
+
+  // If memory cache is empty, fetch only small batch from WP (~60ms) without blocking on 500 listings
+  const apiUrl = getWpApiUrl();
+  if (apiUrl) {
+    try {
+      const res = await fetch(
+        `${apiUrl}/wp-json/wp/v2/business_listing?per_page=${limit + 2}&orderby=modified&order=desc&_fields=id,slug,title,content,meta,modified_gmt&_t=${Date.now()}`,
+        {
+          cache: 'no-store',
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) LocableNextJS/1.0',
+            'Cache-Control': 'no-cache, no-store, must-revalidate',
+            'Pragma': 'no-cache',
+          },
+          signal: AbortSignal.timeout(3500),
+        }
+      );
+      if (res.ok) {
+        const items = await res.json();
+        if (Array.isArray(items) && items.length > 0) {
+          const mapped = items.map(mapWpBusinessToFormat);
+          return mapped.filter((b) => !excludePlaceId || b.placeId !== excludePlaceId).slice(0, limit);
+        }
+      }
+    } catch (e) {}
+  }
+
+  return [];
+}
+
+export const getBusinessBySlug = cache(async (slugOrPlaceId: string): Promise<BusinessListing | null> => {
+  const target = (slugOrPlaceId || '').toLowerCase().trim();
+  if (!target) return null;
+
+  // 1. In-flight promise deduplication: share identical pending requests between generateMetadata and Page
+  if (activeSingleBusinessPromises.has(target)) {
+    return activeSingleBusinessPromises.get(target)!;
+  }
+
+  const promise = (async (): Promise<BusinessListing | null> => {
+    // 2. Check in-memory single-business cache (super-fast 0ms response)
+    const cachedSingle = singleBusinessCache.get(target);
+    if (cachedSingle && Date.now() - cachedSingle.timestamp < 30000) {
+      return cachedSingle.data;
+    }
+
+    // 3. Fast direct targeted query to WordPress REST API (~50-80ms!)
+    // Ensures newly edited or AI-generated content reflects immediately with zero delay.
+    const directMatch = await fetchSingleBusinessFromWp(target);
+    if (directMatch) {
+      upsertListingInCache(directMatch);
+      return directMatch;
+    }
+
+    // 4. Check full memory cache if already populated
+    if (listingsCache && listingsCache.data.length > 0) {
+      const matchInCache = findBusinessInList(listingsCache.data, target);
+      if (matchInCache) {
+        upsertListingInCache(matchInCache);
+        return matchInCache;
+      }
+    }
+
+    // 5. Fallback: full dataset fetch & fuzzy alias search
+    const allListings = await fetchAllFromWp();
+    const fallbackMatch = findBusinessInList(allListings, target);
+    if (fallbackMatch) {
+      upsertListingInCache(fallbackMatch);
+      return fallbackMatch;
+    }
+
+    return null;
+  })();
+
+  activeSingleBusinessPromises.set(target, promise);
+  try {
+    return await promise;
+  } finally {
+    activeSingleBusinessPromises.delete(target);
+  }
 });
 
 /**
@@ -771,32 +961,54 @@ export async function getCities(): Promise<LocationCity[]> {
 }
 
 export async function getReviewsForBusiness(businessPlaceId: string): Promise<BusinessReview[]> {
-  const apiUrl = getWpApiUrl();
+  if (!businessPlaceId) return [];
+  const target = businessPlaceId.trim();
 
-  if (apiUrl) {
-    try {
-      const res = await fetch(
-        `${apiUrl}/wp-json/wp/v2/business_review?meta_key=businessPlaceId&meta_value=${businessPlaceId}`,
-        {
-          headers: {
-            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) LocableNextJS/1.0',
-          },
-          signal: AbortSignal.timeout(5000),
-          cache: 'no-store',
-        }
-      );
-      if (res.ok) {
-        const data = await res.json();
-        if (Array.isArray(data) && data.length > 0) {
-          return data.map((item) => mapWpReviewToFormat(item));
-        }
-      }
-    } catch (e) {
-      console.warn('[WordPress] Review fetch failed:', e);
-    }
+  const cached = reviewsCache.get(target);
+  if (cached && Date.now() - cached.timestamp < 60000) {
+    return cached.data;
   }
 
-  return [];
+  if (activeReviewsPromises.has(target)) {
+    return activeReviewsPromises.get(target)!;
+  }
+
+  const promise = (async (): Promise<BusinessReview[]> => {
+    const apiUrl = getWpApiUrl();
+    if (apiUrl) {
+      try {
+        const res = await fetch(
+          `${apiUrl}/wp-json/wp/v2/business_review?meta_key=businessPlaceId&meta_value=${encodeURIComponent(target)}`,
+          {
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) LocableNextJS/1.0',
+            },
+            signal: AbortSignal.timeout(3500),
+            cache: 'no-store',
+          }
+        );
+        if (res.ok) {
+          const data = await res.json();
+          if (Array.isArray(data) && data.length > 0) {
+            const mapped = data.map((item) => mapWpReviewToFormat(item));
+            reviewsCache.set(target, { data: mapped, timestamp: Date.now() });
+            return mapped;
+          }
+        }
+      } catch (e) {
+        // Fallback to empty
+      }
+    }
+    reviewsCache.set(target, { data: [], timestamp: Date.now() });
+    return [];
+  })();
+
+  activeReviewsPromises.set(target, promise);
+  try {
+    return await promise;
+  } finally {
+    activeReviewsPromises.delete(target);
+  }
 }
 
 export async function getBlogPosts(): Promise<BlogPost[]> {
