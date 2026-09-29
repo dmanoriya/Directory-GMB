@@ -22,23 +22,26 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   const stateCode = cityObj ? cityObj.state : state.toUpperCase();
   const wpApiUrl = getWpApiUrl();
 
+  const effectiveTitle = cityObj?.metaTitle || `Verified Local Businesses in ${cityName}, ${stateCode} | San Diego Business Circle`;
+  const effectiveDesc = cityObj?.metaDescription || `Discover verified local businesses, top-rated medical spas, licensed contractors, plumbers, and home services in ${cityName}, ${stateCode}.`;
+
   const defaultMeta: Metadata = {
-    title: `Verified Local Businesses in ${cityName}, ${stateCode} | San Diego Business Circle`,
-    description: `Discover verified local businesses, top-rated medical spas, licensed contractors, plumbers, and home services in ${cityName}, ${stateCode}.`,
+    title: effectiveTitle,
+    description: effectiveDesc,
     alternates: {
       canonical: `https://sandiegobusinesscircle.com/${state}/${city}`,
     },
     openGraph: {
-      title: `Verified Local Businesses in ${cityName}, ${stateCode}`,
-      description: `Discover verified local businesses, medical spas, and contractors in ${cityName}, ${stateCode}.`,
+      title: effectiveTitle,
+      description: effectiveDesc,
       url: `https://sandiegobusinesscircle.com/${state}/${city}`,
       type: 'website',
       images: ['https://images.unsplash.com/photo-1570172619644-dfd03ed5d881?w=1200&h=630&fit=crop&q=80'],
     },
     twitter: {
       card: 'summary_large_image',
-      title: `Verified Businesses in ${cityName}, ${stateCode}`,
-      description: `Discover verified local businesses in ${cityName}, ${stateCode}.`,
+      title: effectiveTitle,
+      description: effectiveDesc,
       images: ['https://images.unsplash.com/photo-1570172619644-dfd03ed5d881?w=1200&h=630&fit=crop&q=80'],
     }
   };

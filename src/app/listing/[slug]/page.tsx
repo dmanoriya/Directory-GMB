@@ -44,22 +44,25 @@ export async function generateMetadata({ params }: ListingPageProps) {
   const wpSlug = (business as any).wpSlug || business.slug;
   const rankMathWpUrl = `${wpApiUrl}/business_listing/${wpSlug}/`;
 
+  const effectiveTitle = business.metaTitle || `${business.title} | ${business.city}, CA | San Diego Directory`;
+  const effectiveDesc = business.metaDescription || metaSnippet;
+
   const defaultMeta = {
-    title: `${business.title} | ${business.city}, CA | San Diego Directory`,
-    description: metaSnippet,
+    title: effectiveTitle,
+    description: effectiveDesc,
     alternates: {
       canonical: `https://sandiegobusinesscircle.com/listing/${business.slug}`,
     },
     openGraph: {
-      title: `${business.title} | ${business.city}, CA`,
-      description: metaSnippet,
+      title: effectiveTitle,
+      description: effectiveDesc,
       images: [business.thumbnail || business.coverImage || ''],
       url: `https://sandiegobusinesscircle.com/listing/${business.slug}`,
     },
     twitter: {
       card: 'summary_large_image' as const,
-      title: `${business.title} | ${business.city}, CA`,
-      description: metaSnippet,
+      title: effectiveTitle,
+      description: effectiveDesc,
       images: [business.thumbnail || business.coverImage || ''],
     },
   };

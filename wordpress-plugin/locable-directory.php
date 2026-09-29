@@ -95,7 +95,9 @@ function locable_directory_register_cpts() {
         'address', 'state', 'zip', 'phone', 'website', 'price', 'workingHours',
         'thumbnail', 'coverImage', 'description', 'serviceOptions', 'services',
         'googleMapsEmbedUrl', 'latitude', 'longitude', 'rating', 'reviews', 'verified',
-        'founderName', 'founderRole', 'founderExperience', 'founderQuote', 'founderAvatar', 'licenseStatus'
+        'founderName', 'founderRole', 'founderExperience', 'founderQuote', 'founderAvatar', 'licenseStatus',
+        'seo_description', 'meta_title', 'meta_description', 'metaTitle', 'metaDescription',
+        'rank_math_title', 'rank_math_description', 'rank_math_focus_keyword'
     );
     foreach ($meta_keys as $key) {
         register_post_meta('business_listing', $key, array(
@@ -104,6 +106,40 @@ function locable_directory_register_cpts() {
             'type'         => 'string',
             'auth_callback' => '__return_true',
         ));
+    }
+
+    // Register SEO Meta Fields for Standard Posts and Pages
+    $cpt_seo_keys = array(
+        'meta_title', 'meta_description', 'seo_description', 'metaTitle', 'metaDescription',
+        'rank_math_title', 'rank_math_description', 'rank_math_focus_keyword',
+        '_rank_math_title', '_rank_math_description', '_rank_math_focus_keyword'
+    );
+    foreach (array('post', 'page') as $cpt) {
+        foreach ($cpt_seo_keys as $key) {
+            register_post_meta($cpt, $key, array(
+                'show_in_rest'  => true,
+                'single'        => true,
+                'type'          => 'string',
+                'auth_callback' => '__return_true',
+            ));
+        }
+    }
+
+    // Register SEO Term Meta for Taxonomies (Business Types, Locations, Categories)
+    $term_seo_keys = array(
+        'meta_title', 'meta_description', 'seo_title', 'seo_description',
+        'metaTitle', 'metaDescription', 'seo_keywords', 'og_image',
+        'rank_math_title', 'rank_math_description', '_rank_math_title', '_rank_math_description'
+    );
+    foreach (array('business_type', 'business_location', 'category') as $tax) {
+        foreach ($term_seo_keys as $key) {
+            register_term_meta($tax, $key, array(
+                'show_in_rest'  => true,
+                'single'        => true,
+                'type'          => 'string',
+                'auth_callback' => '__return_true',
+            ));
+        }
     }
 
     register_post_type('business_review', array(
@@ -707,7 +743,12 @@ function locable_maps_settings_page() {
     <?php
 }
 
-// ─── 5. CSV IMPORTER PAGE (chunked AJAX upload) ───────────────────────────────
+// ─── 4.5 NATIVE RANK MATH SEO INTEGRATION ──────────────────────────────────
+// SEO for all frontend pages (Home, About, Contact, Explore, Categories, Locations,
+// Blog, Add Business, Claim Listing, FAQ, Privacy, Terms, Sitemap) is fully managed
+// via native WordPress Pages with matching slugs and Rank Math SEO meta boxes.
+// Taxonomies and Business Listings are also managed directly with Rank Math.
+
 function locable_csv_importer_page() {
     // Show current PHP limits so admin can verify
     $upload_max     = ini_get('upload_max_filesize');
@@ -1548,8 +1589,10 @@ function locable_ajax_import_chunk() {
             $raw_address
         );
 
-        $row_desc = sanitize_textarea_field($row['description'] ?? '');
-        if (empty($row_desc) || strlen(trim($row_desc)) < 40) {
+        $raw_seo_desc = trim((string)($row['seo_description'] ?? ''));
+        $raw_desc     = !empty($raw_seo_desc) ? $raw_seo_desc : trim((string)($row['description'] ?? ''));
+
+        if (empty($raw_desc) || strlen($raw_desc) < 40) {
             $row_desc = locable_synthesize_about_content(
                 $title,
                 sanitize_text_field($row['type'] ?? ''),
@@ -1561,6 +1604,8 @@ function locable_ajax_import_chunk() {
                 sanitize_text_field($row['serviceOptions'] ?? ($row['otherTypes'] ?? '')),
                 sanitize_text_field($row['phone'] ?? '')
             );
+        } else {
+            $row_desc = wp_kses_post($raw_desc);
         }
 
         $post_data = array(
@@ -1575,13 +1620,13 @@ function locable_ajax_import_chunk() {
             $post_data['ID'] = $existing[0];
             // Do not alter post_name on updates so URLs stay permanent and never 404!
             unset($post_data['post_name']);
-            // If existing listing already has custom description, keep user's description
+            // If incoming row doesn't have an explicit seo_description and existing post has a custom user description, keep existing
             $existing_content = get_post_field('post_content', $existing[0]);
             $existing_desc_meta = get_post_meta($existing[0], 'description', true);
-            if (!empty($existing_desc_meta) && trim($existing_desc_meta) !== '') {
+            if (empty($raw_seo_desc) && !empty($existing_desc_meta) && trim($existing_desc_meta) !== '' && !locable_is_synthetic_description($existing_desc_meta)) {
                 $row_desc = $existing_desc_meta;
                 unset($post_data['post_content']);
-            } elseif (!empty($existing_content) && trim($existing_content) !== '') {
+            } elseif (empty($raw_seo_desc) && !empty($existing_content) && trim($existing_content) !== '' && !locable_is_synthetic_description($existing_content)) {
                 $row_desc = $existing_content;
                 unset($post_data['post_content']);
             }
@@ -1621,6 +1666,11 @@ function locable_ajax_import_chunk() {
             'workingHours'   => wp_kses_post($row['workingHours']          ?? ''),
             'serviceOptions' => sanitize_text_field($row['serviceOptions'] ?? ''),
             'description'    => $row_desc,
+            'seo_description'=> $row_desc,
+            'meta_title'     => sanitize_text_field($row['meta_title']     ?? ''),
+            'metaTitle'      => sanitize_text_field($row['meta_title']     ?? ''),
+            'meta_description' => sanitize_text_field($row['meta_description'] ?? ''),
+            'metaDescription' => sanitize_text_field($row['meta_description'] ?? ''),
             'thumbnail'      => esc_url_raw($row['thumbnail']              ?? ''),
             'latitude'       => floatval($row['latitude']                  ?? 0),
             'longitude'      => floatval($row['longitude']                 ?? 0),
@@ -1631,6 +1681,24 @@ function locable_ajax_import_chunk() {
 
         foreach ($meta_fields as $key => $value) {
             update_post_meta($post_id, $key, $value);
+        }
+
+        // ── Rank Math & Headless SEO Synchronization ──
+        $meta_title = sanitize_text_field($row['meta_title'] ?? '');
+        $meta_desc  = sanitize_text_field($row['meta_description'] ?? '');
+        $keyword    = sanitize_text_field($row['keyword'] ?? '');
+
+        if (!empty($meta_title)) {
+            update_post_meta($post_id, 'rank_math_title', $meta_title);
+            update_post_meta($post_id, '_rank_math_title', $meta_title);
+        }
+        if (!empty($meta_desc)) {
+            update_post_meta($post_id, 'rank_math_description', $meta_desc);
+            update_post_meta($post_id, '_rank_math_description', $meta_desc);
+        }
+        if (!empty($keyword)) {
+            update_post_meta($post_id, 'rank_math_focus_keyword', $keyword);
+            update_post_meta($post_id, '_rank_math_focus_keyword', $keyword);
         }
 
         // ── Auto-fill WP Taxonomies (Business Types & Locations) without duplicates ──
@@ -2709,6 +2777,20 @@ function locable_rest_get_branding() {
     $hero_image_2   = get_option('locable_hero_image_2', '');
     $hero_image_3   = get_option('locable_hero_image_3', '');
     $hero_badge_txt = get_option('locable_hero_badge_text', 'VERIFIED LOCAL BUSINESS DIRECTORY •');
+    
+    $front_page_id  = (int) get_option('page_on_front');
+    $home_title     = $site_name . ' | ' . $site_tagline;
+    $home_desc      = $meta_desc;
+    if ($front_page_id) {
+        $rm_title = get_post_meta($front_page_id, 'rank_math_title', true) ?: get_post_meta($front_page_id, '_rank_math_title', true);
+        $rm_desc  = get_post_meta($front_page_id, 'rank_math_description', true) ?: get_post_meta($front_page_id, '_rank_math_description', true);
+        if (!empty($rm_title)) {
+            $home_title = $rm_title;
+        }
+        if (!empty($rm_desc)) {
+            $home_desc = $rm_desc;
+        }
+    }
 
     $data = array(
         'siteName'        => $site_name,
@@ -2720,8 +2802,8 @@ function locable_rest_get_branding() {
         'heroImage2'      => $hero_image_2,
         'heroImage3'      => $hero_image_3,
         'heroBadgeText'   => $hero_badge_txt,
-        'metaTitle'       => $site_name . ' | ' . $site_tagline,
-        'metaDescription' => $meta_desc,
+        'metaTitle'       => $home_title,
+        'metaDescription' => $home_desc,
     );
 
     $response = new WP_REST_Response($data, 200);
@@ -4339,6 +4421,9 @@ function locable_invalidate_frontend_cache() {
 // Hook into post saves, Rank Math SEO updates, deletions, and status changes
 add_action('save_post_business_listing', 'locable_invalidate_frontend_cache', 30);
 add_action('save_post_post', 'locable_invalidate_frontend_cache', 30);
+add_action('save_post_page', 'locable_invalidate_frontend_cache', 30);
+add_action('saved_term', 'locable_invalidate_frontend_cache', 30);
+add_action('delete_term', 'locable_invalidate_frontend_cache', 30);
 add_action('deleted_post', 'locable_invalidate_frontend_cache', 20);
 add_action('trash_business_listing', 'locable_invalidate_frontend_cache', 20);
 add_action('untrashed_post', 'locable_invalidate_frontend_cache', 20);
@@ -4352,4 +4437,5 @@ add_action('transition_post_status', function($new_status, $old_status, $post) {
 
 // Rank Math specific hook whenever Rank Math SEO details are updated
 add_action('rank_math/seo_details_saved', 'locable_invalidate_frontend_cache', 20);
+add_action('update_option_page_on_front', 'locable_invalidate_frontend_cache', 20);
 

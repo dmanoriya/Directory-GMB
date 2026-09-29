@@ -215,6 +215,10 @@ export async function getSiteBranding(): Promise<SiteBranding> {
   }
 }
 
+export function clearSeoCache(): void {
+  // Retained for backwards-compatibility; SEO is fully handled via Rank Math REST endpoint and clearRankMathCache()
+}
+
 async function getWpListingStatus(apiUrl: string): Promise<{ total: number; latestModifiedGmt: string } | null> {
   try {
     const res = await fetch(
@@ -804,14 +808,19 @@ export async function getCategories(): Promise<Category[]> {
           const t = allTerms[i];
           const key = String(t.name || '').toLowerCase().trim();
           if (!key) continue;
+          const termMeta = t.meta || {};
+          const metaTitle = String(termMeta.meta_title || termMeta.seo_title || termMeta.metaTitle || termMeta.rank_math_title || '').trim();
+          const metaDescription = String(termMeta.meta_description || termMeta.seo_description || termMeta.metaDescription || termMeta.rank_math_description || '').trim();
           categoryMap.set(key, {
             id: String(t.id || `wp-cat-${i}`),
             name: t.name,
             slug: t.slug,
             icon: 'Store',
-            description: `${t.name} services & contractors`,
+            description: metaDescription || `${t.name} services & contractors`,
             count: t.count || 0,
             subcategories: [],
+            metaTitle: metaTitle || undefined,
+            metaDescription: metaDescription || undefined,
           });
         }
       }
@@ -880,7 +889,7 @@ export async function getCities(): Promise<LocationCity[]> {
     return citiesCache.data;
   }
 
-  const cityMap = new Map<string, { name: string; slug: string; state: string; count: number }>();
+  const cityMap = new Map<string, { name: string; slug: string; state: string; count: number; metaTitle?: string; metaDescription?: string; }>();
   const apiUrl = getWpApiUrl();
 
   // 1. Fetch from WordPress business_location taxonomy directly
@@ -901,11 +910,16 @@ export async function getCities(): Promise<LocationCity[]> {
             const cityName = cleanCityName(t.name);
             if (!cityName) continue;
             const slug = t.slug || cityName.toLowerCase().replace(/\s+/g, '-');
+            const termMeta = t.meta || {};
+            const metaTitle = String(termMeta.meta_title || termMeta.seo_title || termMeta.metaTitle || termMeta.rank_math_title || '').trim();
+            const metaDescription = String(termMeta.meta_description || termMeta.seo_description || termMeta.metaDescription || termMeta.rank_math_description || '').trim();
             cityMap.set(slug, {
               name: cityName,
               slug,
               state: 'CA',
               count: t.count || 0,
+              metaTitle: metaTitle || undefined,
+              metaDescription: metaDescription || undefined,
             });
           }
         }
@@ -948,6 +962,8 @@ export async function getCities(): Promise<LocationCity[]> {
           zipCodes: mock?.zipCodes || [],
           count: c.count,
           popularCategories: mock?.popularCategories || [],
+          metaTitle: c.metaTitle,
+          metaDescription: c.metaDescription,
         };
       });
   } else {
@@ -1113,6 +1129,9 @@ function mapWpPostToFormat(item: any): BlogPost {
   const rawTitle = item.title?.rendered || 'Untitled Article';
   const rawExcerpt = (item.excerpt?.rendered || '').replace(/<[^>]*>/g, '').trim();
 
+  const metaTitle = String(meta.meta_title || meta.metaTitle || meta.rank_math_title || meta._rank_math_title || '').trim();
+  const metaDescription = String(meta.meta_description || meta.metaDescription || meta.rank_math_description || meta._rank_math_description || '').trim();
+
   return {
     id: String(item.id || ''),
     title: decodeHtmlEntities(rawTitle),
@@ -1123,7 +1142,9 @@ function mapWpPostToFormat(item: any): BlogPost {
     date: dateFormatted,
     category: decodeHtmlEntities(categoryName),
     readTime,
-    coverImage
+    coverImage,
+    metaTitle: metaTitle || undefined,
+    metaDescription: metaDescription || undefined,
   };
 }
 
@@ -1439,7 +1460,10 @@ function mapWpBusinessToFormat(item: Record<string, unknown>): BusinessListing {
     price:         String(meta.price || '$$'),
     rating:        parseFloat(String(meta.rating || '5.0')),
     reviews:       parseInt(String(meta.reviews || '0'), 10),
-    description:   String(meta.description || (item.content as any)?.rendered?.replace(/<[^>]*>/g, '') || ''),
+    description:   String(meta.seo_description || meta.description || (item.content as any)?.rendered?.replace(/<[^>]*>/g, '') || ''),
+    metaTitle:     String(meta.meta_title || meta.metaTitle || meta.rank_math_title || meta._rank_math_title || '').trim(),
+    metaDescription: String(meta.meta_description || meta.metaDescription || meta.rank_math_description || meta._rank_math_description || '').trim(),
+    seoDescription: String(meta.seo_description || meta.description || '').trim(),
     openState:     String(meta.openState || 'Open'),
     workingHours:  parseWorkingHours(meta.workingHours),
     serviceOptions,

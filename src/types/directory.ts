@@ -43,6 +43,9 @@ export interface BusinessListing {
   founderQuote?: string;
   founderAvatar?: string;
   licenseStatus?: string;
+  metaTitle?: string;
+  metaDescription?: string;
+  seoDescription?: string;
 }
 
 export interface ReviewPhoto {
@@ -84,6 +87,8 @@ export interface Category {
   description: string;
   count: number;
   subcategories: string[];
+  metaTitle?: string;
+  metaDescription?: string;
 }
 
 export interface LocationCity {
@@ -96,6 +101,8 @@ export interface LocationCity {
   zipCodes: string[];
   count: number;
   popularCategories: string[];
+  metaTitle?: string;
+  metaDescription?: string;
 }
 
 export interface FilterState {
@@ -138,6 +145,8 @@ export interface BlogPost {
   readTime: string;
   coverImage: string;
   image?: string;
+  metaTitle?: string;
+  metaDescription?: string;
 }
 
 export interface SiteBranding {
@@ -152,4 +161,18 @@ export interface SiteBranding {
   heroImage2?: string;
   heroImage3?: string;
   heroBadgeText?: string;
+}
+
+export interface PageSeoData {
+  title?: string;
+  description?: string;
+  keywords?: string;
+  ogImage?: string;
+  canonical?: string;
+  robots?: string;
+}
+
+export interface SiteSeoOptions {
+  pages: Record<string, PageSeoData>;
+  patterns: Record<string, string>;
 }

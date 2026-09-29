@@ -160,8 +160,9 @@ export async function getRankMathMetadata(options: {
   wpUrl: string;
   fallbackMetadata: Metadata;
   fallbackCanonicalPath?: string;
+  pageKey?: string;
 }): Promise<{ metadata: Metadata; jsonLdSchemas: string[] }> {
-  const { wpUrl, fallbackMetadata, fallbackCanonicalPath } = options;
+  const { wpUrl, fallbackMetadata, fallbackCanonicalPath, pageKey } = options;
 
   // 1. In-flight promise deduplication: share ongoing request across generateMetadata and Page
   if (rankMathInFlight.has(wpUrl)) {
@@ -169,6 +170,8 @@ export async function getRankMathMetadata(options: {
   }
 
   const promise = (async () => {
+    const effectiveFallback: Metadata = { ...fallbackMetadata };
+
     const now = Date.now();
     const cached = rankMathCache.get(wpUrl);
     let headData: RankMathHeadData | null = null;
@@ -185,19 +188,19 @@ export async function getRankMathMetadata(options: {
 
     if (!headData || !headData.title || headData.title.toLowerCase().includes('page not found')) {
       return {
-        metadata: fallbackMetadata,
+        metadata: effectiveFallback,
         jsonLdSchemas: [],
       };
     }
 
-    // Merge Rank Math tags on top of fallback metadata
+    // Merge Rank Math tags on top of effective fallback metadata
     const mergedMetadata: Metadata = {
-      ...fallbackMetadata,
-      title: headData.title || fallbackMetadata.title,
-      description: headData.description || fallbackMetadata.description,
+      ...effectiveFallback,
+      title: headData.title || effectiveFallback.title,
+      description: headData.description || effectiveFallback.description,
       alternates: {
-        ...fallbackMetadata.alternates,
-        canonical: headData.canonical || fallbackMetadata.alternates?.canonical,
+        ...effectiveFallback.alternates,
+        canonical: headData.canonical || effectiveFallback.alternates?.canonical,
       },
       robots: headData.robots
         ? {

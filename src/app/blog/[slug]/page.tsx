@@ -23,23 +23,26 @@ export async function generateMetadata({ params }: BlogDetailProps): Promise<Met
   if (!post) return { title: 'Article Not Found | San Diego Business Circle Blog' };
 
   const wpApiUrl = getWpApiUrl();
+  const effectiveTitle = post.metaTitle || `${post.title} | San Diego Business Circle Blog`;
+  const effectiveDesc = post.metaDescription || post.excerpt || `${post.title} - Read the latest San Diego local business insights, consumer guides, and expert advice.`;
+
   const defaultMeta: Metadata = {
-    title: `${post.title} | San Diego Business Circle Blog`,
-    description: post.excerpt || `${post.title} - Read the latest San Diego local business insights, consumer guides, and expert advice.`,
+    title: effectiveTitle,
+    description: effectiveDesc,
     alternates: {
       canonical: `https://sandiegobusinesscircle.com/blog/${post.slug}`,
     },
     openGraph: {
-      title: `${post.title} | San Diego Business Circle Blog`,
-      description: post.excerpt || post.title,
+      title: effectiveTitle,
+      description: effectiveDesc,
       url: `https://sandiegobusinesscircle.com/blog/${post.slug}`,
       type: 'article',
       images: [post.coverImage || 'https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?w=1200&h=630&fit=crop&q=80'],
     },
     twitter: {
       card: 'summary_large_image',
-      title: post.title,
-      description: post.excerpt || post.title,
+      title: effectiveTitle,
+      description: effectiveDesc,
       images: [post.coverImage || 'https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?w=1200&h=630&fit=crop&q=80'],
     }
   };
